@@ -200,6 +200,69 @@ local Remotes: { [string]: RemoteDef } = {
 		burst = 3,
 		since = "5",
 	},
+	["Shop.Result"] = { dir = "S2C", since = "5" }, -- { ok, id, reason key, crate = { item, shiny, duplicate, refund } }
+	-- Garage.Equip: vehicle id (or "rider"), slot, item id ("" takes it off)
+	["Garage.Equip"] = {
+		dir = "C2S",
+		schema = {
+			{ t = "string", max = 32 },
+			{
+				t = "string",
+				oneOf = {
+					"paint",
+					"rims",
+					"trail",
+					"trail2",
+					"horn",
+					"explosion",
+					"decal",
+					"part",
+					"hat",
+					"outfit",
+				},
+			},
+			{ t = "string", max = 40 },
+		},
+		rate = 4,
+		burst = 6,
+		since = "5",
+	},
+	-- Studio only (admins): grant a pass or product without Robux, for testing before the ids exist
+	["Dev.Grant"] = {
+		dir = "C2S",
+		schema = {
+			{
+				t = "string",
+				oneOf = {
+					"rider",
+					"vip",
+					"stunt",
+					"explosions",
+					"starter",
+					"coins_s",
+					"coins_m",
+					"coins_l",
+					"coins_xl",
+					"crate",
+					"extra_slot",
+					"bundle",
+				},
+			},
+		},
+		rate = 2,
+		burst = 4,
+		since = "5",
+	},
+	-- Shop.Seen: the Starter Pack offer was shown (it is offered once, after the first finish)
+	["Shop.Seen"] = {
+		dir = "C2S",
+		schema = { { t = "string", oneOf = { "starter" } } },
+		rate = 0.5,
+		burst = 1,
+		since = "5",
+	},
+	["Quest.Done"] = { dir = "S2C", since = "5" }, -- a quest reached its target: { text }
+	["Mastery.Up"] = { dir = "S2C", since = "5" }, -- { vehicleId, level, itemId }
 	["Streak.Claim"] = { dir = "C2S", schema = {}, rate = 1, burst = 1, since = "5" },
 	["Gift.Send"] = { dir = "C2S", schema = { { t = "integer", min = 1 } }, rate = 1, burst = 1, since = "5" },
 	["Rebirth.Confirm"] = { dir = "C2S", schema = {}, rate = 1, burst = 1, since = "5" },

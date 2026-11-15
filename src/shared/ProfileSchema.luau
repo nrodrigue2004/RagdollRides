@@ -13,9 +13,16 @@
 --   maps.links = { [tostring(slot)] = mapId } a draft's published map (a republish keeps plays/ratings)
 --   maps.lastPublish = unix time of the last publish (the 10 minute cooldown survives a rejoin)
 --   stats.playSeconds = total play time (the 15 minute publish gate)
+--   vehicles[id].paint/rims/trail/horn/explosion/decal = Catalog item id (spec fields; decal added),
+--     .parts = { part item ids } (one part at a time for now), .trail2 = a second trail (VIP)
+--   rider.hat / rider.outfit = Catalog item id; inventory[itemId] = { count, shiny } (spec)
+--   passes[name] = true: a game pass (re-checked on join) or a pass from the bundle product
+--   daily.quests = { Quests.State } today's 3; weekly = { week, quests, starsClaimed }
+--   streak = { day = last day claimed 1..7, lastClaim = whole UTC day number (not yyyymmdd) }
 
 -- Roblox finds Config beside this module; the Lune test runner (no `script`) uses the file path.
 local Config = if script then require(script.Parent.Config) else (require :: any)("./Config")
+local Quests = if script then require(script.Parent.Quests) else (require :: any)("./Quests")
 
 local ProfileSchema = {}
 
@@ -57,7 +64,7 @@ function ProfileSchema.default(): { [string]: any }
 			chestClaimed = false,
 			adClaims = 0,
 		},
-		weekly = { week = 0, quests = {} },
+		weekly = { week = 0, quests = {}, starsClaimed = false },
 		streak = { day = 0, lastClaim = 0 },
 		stats = {
 			finishes = 0,
@@ -88,7 +95,7 @@ function ProfileSchema.default(): { [string]: any }
 		},
 		settings = deepCopy(Config.Settings.defaults),
 		receipts = {},
-		flags = { banPublishUntil = 0, starterOffered = false, boardBanDay = 0 },
+		flags = { banPublishUntil = 0, starterOffered = false, starterBought = false, boardBanDay = 0 },
 		tracks = {},
 		trackOrder = {},
 		ghosts = {},
@@ -264,33 +271,86 @@ function ProfileSchema.recordReceipt(profile: { [string]: any }, purchaseId: str
 end
 
 -- What the client is told about its own profile (nothing it could use to cheat; it is display data)
-function ProfileSchema.clientView(profile: { [string]: any }): { [string]: any }
+local LOOK_SLOTS = { "paint", "rims", "trail", "trail2", "horn", "explosion", "decal" }
+
+local function questView(list: { any }): { any }
+	local out = {}
+	for _, state in list do
+		local def = Quests.byId[state.id]
+		if def then
+			table.insert(out, {
+				id = state.id,
+				text = Quests.text(state),
+				progress = state.progress,
+				target = def.target,
+				claimed = state.claimed == true,
+				reward = Quests.reward(state, Config.Quests),
+				mode = def.mode,
+			})
+		end
+	end
+	return out
+end
+
+-- What the client may see (display only). now: unix time (for the streak's next claim).
+function ProfileSchema.clientView(profile: { [string]: any }, now: number?): { [string]: any }
 	local tracks = {}
 	for mapId, entry in profile.tracks do
 		tracks[mapId] = { best = entry.best, stars = entry.stars, splits = entry.splits }
 	end
 	local owned = {}
+	local vehicles = {}
 	for id, entry in profile.vehicles do
 		if entry.owned then
 			table.insert(owned, id)
+			local looks = { mastery = entry.mastery or 0, part = entry.parts and entry.parts[1] or nil }
+			for _, slot in LOOK_SLOTS do
+				looks[slot] = entry[slot]
+			end
+			vehicles[id] = looks
 		end
 	end
 	table.sort(owned)
 	local inventory = {}
-	for id in profile.inventory do
-		table.insert(inventory, id)
+	local shiny = {}
+	for id, entry in profile.inventory do
+		if id ~= "crate_key" then
+			table.insert(inventory, id)
+			if type(entry) == "table" and entry.shiny then
+				table.insert(shiny, id)
+			end
+		end
 	end
 	table.sort(inventory)
+	local keyEntry = profile.inventory.crate_key
+	local today = ProfileSchema.dayNumber(now or os.time())
+	local nextDay, canClaim = Quests.streakNext(profile.streak.day or 0, profile.streak.lastClaim or 0, today)
 	return {
 		coins = profile.coins,
 		stars = profile.stars,
+		rebirths = profile.rebirths,
 		equippedVehicle = profile.equippedVehicle,
 		owned = owned,
+		vehicles = vehicles,
 		inventory = inventory,
+		shiny = shiny,
+		crateKeys = if type(keyEntry) == "table" then keyEntry.count or 0 else 0,
+		passes = deepCopy(profile.passes),
+		rider = { hat = profile.rider.hat, outfit = profile.rider.outfit },
 		tut = deepCopy(profile.tut),
 		settings = deepCopy(profile.settings),
 		tracks = tracks,
 		tracksCoinsToday = profile.daily.coinsByMode.tracks,
+		quests = {
+			daily = questView(profile.daily.quests),
+			weekly = questView(profile.weekly.quests),
+			chestClaimed = profile.daily.chestClaimed == true,
+			chestReady = Quests.allClaimed(profile.daily.quests) and not profile.daily.chestClaimed,
+			weeklyStarsClaimed = profile.weekly.starsClaimed == true,
+			giftSent = profile.daily.giftSent == true,
+		},
+		streak = { day = profile.streak.day or 0, nextDay = nextDay, canClaim = canClaim },
+		starterOffered = profile.flags.starterOffered == true,
 	}
 end
 

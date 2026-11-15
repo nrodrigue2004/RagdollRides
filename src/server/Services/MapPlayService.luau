@@ -24,6 +24,7 @@ local MapStats = require(Shared.MapStats)
 local Net = require(Shared.Net)
 local PieceCatalog = require(Shared.PieceCatalog)
 local ProfileSchema = require(Shared.ProfileSchema)
+local Signal = require(Shared.Util.Signal)
 local StarterMaps = require(Shared.StarterMaps)
 
 local Services = script.Parent
@@ -35,6 +36,8 @@ local MapStore = require(Services.MapStore)
 local TracksService = require(Services.TracksService)
 
 local MapPlayService = {}
+
+MapPlayService.Rated = Signal.new() -- (player, mapId, stars): a rating was accepted
 
 type Loaded = {
 	mapId: string,
@@ -293,6 +296,7 @@ local function onRate(player: Player, mapId: string, stars: number)
 	p.ratingCount += countDelta
 	profile.ratings[mapId] = stars
 	DataService.changed(player)
+	MapPlayService.Rated:Fire(player, mapId, stars)
 end
 
 -- Pay royalties waiting in the store to a creator who is in this server

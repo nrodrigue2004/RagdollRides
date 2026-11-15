@@ -2,7 +2,7 @@
 -- * Boosts: +10% per friend in the server (max +50%) and +5% per rebirth (max +50%), from TracksMath.boost.
 -- * Daily caps per mode live in the profile's daily counters (UTC day); callers pass the cap.
 -- * Every grant is logged to Roblox's economy analytics (in a pcall: analytics never blocks a reward).
--- Nothing here can be bought with Robux, and nothing sold changes stats (design pillar).
+-- Coins can also come from Robux coin packs (PurchaseService); nothing sold changes stats (design pillar).
 
 local AnalyticsService = game:GetService("AnalyticsService")
 local Players = game:GetService("Players")
@@ -63,6 +63,38 @@ function EconomyService.grantCoins(player: Player, amount: number, mode: string?
 	logEconomy(player, "Coins", amount, profile.coins, sku)
 	DataService.changed(player)
 	return amount
+end
+
+-- Spend coins and stars together (a shop purchase). Returns false and spends nothing if either is short.
+function EconomyService.spend(player: Player, coins: number, stars: number, sku: string): boolean
+	local profile = DataService.get(player)
+	if not profile or coins < 0 or stars < 0 or profile.coins < coins or profile.stars < stars then
+		return false
+	end
+	profile.coins -= coins
+	profile.stars -= stars
+	for _, row in { { "Coins", coins, profile.coins }, { "Stars", stars, profile.stars } } do
+		if row[2] > 0 then
+			pcall(function()
+				AnalyticsService:LogEconomyEvent(
+					player,
+					Enum.AnalyticsEconomyFlowType.Sink,
+					row[1],
+					row[2],
+					row[3],
+					Enum.AnalyticsEconomyTransactionType.Shop.Name,
+					sku
+				)
+			end)
+		end
+	end
+	DataService.changed(player)
+	return true
+end
+
+-- Are these two players Roblox friends in this server? (gifts)
+function EconomyService.areFriends(a: Player, b: Player): boolean
+	return friends[a] ~= nil and friends[a][b] == true
 end
 
 function EconomyService.grantStars(player: Player, amount: number, sku: string): number

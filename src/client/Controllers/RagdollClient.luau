@@ -12,6 +12,7 @@ local RunService = game:GetService("RunService")
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
+local Looks = require(Shared.Looks)
 local PoseCodec = require(Shared.PoseCodec)
 local Signal = require(Shared.Util.Signal)
 
@@ -198,6 +199,21 @@ local function buildRider(model: Model, isLocal: boolean)
 		noCollide.Parent = parts.Torso
 	end
 
+	-- Cosmetics: outfit colour and hat (Shared/Looks), again whenever the owner changes them
+	local function dressUp()
+		for _, name in { "Torso", "LeftArm", "RightArm" } do
+			parts[name].Color = Config.color3(colors.suit)
+		end
+		local oldHat = rig:FindFirstChild("Hat")
+		if oldHat then
+			oldHat:Destroy()
+		end
+		Looks.rider(parts, model:GetAttribute("RiderOutfit"), model:GetAttribute("RiderHat"), s)
+	end
+	dressUp()
+	model:GetAttributeChangedSignal("RiderOutfit"):Connect(dressUp)
+	model:GetAttributeChangedSignal("RiderHat"):Connect(dressUp)
+
 	rig.Parent = folder
 
 	return {
@@ -224,9 +240,11 @@ local function setTransparency(rider, value: number)
 	for _, part in rider.parts do
 		part.LocalTransparencyModifier = value
 	end
-	local stripe = rider.rig:FindFirstChild("Stripe")
-	if stripe then
-		stripe.LocalTransparencyModifier = value
+	for _, name in { "Stripe", "Hat" } do
+		local extra = rider.rig:FindFirstChild(name)
+		if extra and extra:IsA("BasePart") then
+			extra.LocalTransparencyModifier = value
+		end
 	end
 end
 

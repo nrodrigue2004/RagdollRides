@@ -206,7 +206,9 @@ function TracksMath.payout(input: PayoutInput, cfg: TracksConfig): Payout
 		boost = input.boost
 	end
 	local wanted = math.floor(base * (1 + boost) + 0.5)
-	local coins = TracksMath.applyCap(base, boost, input.earnedToday, cfg.dailyCap)
+	-- The daily cap rises with the rebirth bonus (spec: Rebirth), so rebirth never shrinks earnings
+	local cap = math.floor(cfg.dailyCap * ((input :: any).capMultiplier or 1) + 0.5)
+	local coins = TracksMath.applyCap(base, boost, input.earnedToday, cap)
 	return {
 		tier = tier,
 		stars = stars,

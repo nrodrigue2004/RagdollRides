@@ -8,6 +8,7 @@
 local TweenService = game:GetService("TweenService")
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Catalog = require(Shared.Catalog)
 local Config = require(Shared.Config)
 
 local ExplosionFx = {}
@@ -19,6 +20,19 @@ local STYLES = {
 		smoke = Color3.fromRGB(60, 58, 64),
 	},
 }
+
+-- Explosion style cosmetics (Shared/Catalog kind "explosion"): the item's colour for the glow, a pale
+-- ring and a tinted smoke. Looks only: the blast itself is the same for every style.
+for _, item in Catalog.items do
+	if item.kind == "explosion" and item.color then
+		local color = Config.color3(item.color)
+		STYLES[item.id] = {
+			glow = color,
+			ring = color:Lerp(Color3.new(1, 1, 1), 0.6),
+			smoke = color:Lerp(Color3.fromRGB(60, 58, 64), 0.5),
+		}
+	end
+end
 
 local active = 0
 local folder: Folder? = nil

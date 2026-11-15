@@ -235,6 +235,7 @@ local function makePart(spec: PartSpec, colors: { [string]: Color3 }): BasePart
 		then (Enum.Material :: any)[spec.material]
 		else Enum.Material.SmoothPlastic
 	part.Transparency = spec.transparency or 0
+	part:SetAttribute("ColorRole", spec.color) -- Shared/Looks recolours the "paint" panels
 	quietPart(part)
 	return part
 end

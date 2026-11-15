@@ -21,6 +21,7 @@ local MapCodec = require(Shared.MapCodec)
 local MapRules = require(Shared.MapRules)
 local Net = require(Shared.Net)
 local PieceCatalog = require(Shared.PieceCatalog)
+local Signal = require(Shared.Util.Signal)
 
 local Services = script.Parent
 local DataService = require(Services.DataService)
@@ -28,6 +29,8 @@ local EconomyService = require(Services.EconomyService)
 local TracksService = require(Services.TracksService)
 
 local BuilderService = {}
+
+BuilderService.TestFinished = Signal.new() -- (player, slot): a TEST finish from the start gate
 
 export type Tested = { slot: number, fingerprint: string, creatorMs: number }
 
@@ -285,6 +288,7 @@ local function onCustomFinish(player: Player, map: any, time: number): { [string
 		creatorMs = math.floor(time * 1000 + 0.5),
 	}
 	EconomyService.builderFunnel(player, 5, "Finished test")
+	BuilderService.TestFinished:Fire(player, map.testSlot)
 	return { ok = true, test = true, slot = map.testSlot }
 end
 

@@ -751,6 +751,12 @@ Config.Quests = {
 	streakRewards = { 50, 75, 100, "crate_key", 150, 200, "cosmetic" },
 	streakOwnedCoins = 250, -- day 7 when you already own this week's cosmetic
 	giftCoins = 10,
+	liveModes = { "tracks" }, -- add "brawl" and "highway" when those modes ship (milestones 7 and 8)
+}
+
+-- Badges (Creator Dashboard ids; 0 until nate creates them)
+Config.Badges = {
+	rebirth = 0,
 }
 
 -- Settings: defaults (same as the saved profile) and allowed values (spec: Settings screen)

@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Net = require(Shared.Net)
+local Looks = require(Shared.Looks)
 local VehicleBuilder = require(Shared.VehicleBuilder)
 
 local Signal = require(Shared.Util.Signal)
@@ -76,6 +77,7 @@ function VehicleService.spawn(player: Player, vehicleId: string, at: CFrame?)
 	local home = if at == nil and VehicleService.homeFor then VehicleService.homeFor(player) else nil
 	local spawnCFrame = at or home or TestTrack.spawnCFrame(slot)
 	local model = VehicleBuilder.build(vehicleId, player.UserId)
+	VehicleService.applyLooks(player, model)
 	local chassis = model.PrimaryPart :: BasePart
 	-- The first respawn point: where the car was put down (the map's start in Tracks)
 	model:SetAttribute("SpawnCFrame", yawOnly(spawnCFrame))
@@ -99,6 +101,20 @@ function VehicleService.spawn(player: Player, vehicleId: string, at: CFrame?)
 	player:SetAttribute("VehicleId", vehicleId)
 	Net.fire("Vehicle.Spawned", player, vehicleId)
 	VehicleService.Spawned:Fire(player, model)
+end
+
+-- The player's cosmetics on their car (and the rider's outfit and hat, which every client builds)
+function VehicleService.applyLooks(player: Player, model: Model?)
+	model = model or vehicles[player]
+	if model == nil then
+		return
+	end
+	local profile = DataService.get(player)
+	local vehicleId = model:GetAttribute("VehicleId")
+	local entry = profile and vehicleId and profile.vehicles[vehicleId]
+	Looks.vehicle(model, Looks.fromProfile(entry))
+	model:SetAttribute("RiderOutfit", profile and profile.rider.outfit or nil)
+	model:SetAttribute("RiderHat", profile and profile.rider.hat or nil)
 end
 
 -- Vehicles a player may drive: the ones they own; Studio and admins may try every vehicle

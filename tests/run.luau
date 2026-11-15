@@ -10,7 +10,10 @@ local GhostCodec = require("../src/shared/GhostCodec")
 local MapCodec = require("../src/shared/MapCodec")
 local MapNames = require("../src/shared/MapNames")
 local MapRules = require("../src/shared/MapRules")
+local Catalog = require("../src/shared/Catalog")
 local MapStats = require("../src/shared/MapStats")
+local Quests = require("../src/shared/Quests")
+local ShopMath = require("../src/shared/ShopMath")
 local PieceCatalog = require("../src/shared/PieceCatalog")
 local ProfileSchema = require("../src/shared/ProfileSchema")
 local StarterMaps = require("../src/shared/StarterMaps")
@@ -1326,6 +1329,204 @@ test("remotes: milestone 4", function()
 	)
 end)
 
+test("shop: catalog", function()
+	local seen = {}
+	for _, item in Catalog.items do
+		check(not seen[item.id], "unique id " .. item.id)
+		seen[item.id] = true
+		check(table.find(Catalog.RARITIES, item.rarity) ~= nil, item.id .. " rarity")
+		if item.source == "shop" then
+			check(item.coins ~= nil and item.coins > 0, item.id .. " has a coin price")
+		end
+		if item.source == "pass" then
+			check(Config.Monetization.passes[item.pass] ~= nil, item.id .. " names a real pass")
+		end
+	end
+	-- Spec price bands
+	for _, item in Catalog.shopItems() do
+		local c = item.coins :: number
+		if item.kind == "paint" then
+			check(c >= 200 and c <= 900, item.id .. " paint 200-900")
+		elseif item.kind == "rims" then
+			check(c >= 300 and c <= 700, item.id .. " rims 300-700")
+		elseif item.kind == "trail" then
+			check(c >= 400 and c <= 1500, item.id .. " trail 400-1500")
+		elseif item.kind == "horn" then
+			check(c == 250, item.id .. " horn 250")
+		elseif item.kind == "explosion" then
+			check(c == 1500, item.id .. " explosion 1500")
+		elseif item.kind == "hat" then
+			check(c >= 300 and c <= 1200, item.id .. " hat 300-1200")
+		else
+			check(c >= 300 and c <= 800, item.id .. " part or decal 300-800")
+		end
+	end
+	check(#Catalog.passItems("rider") == 12, "Rider Pass: 8 outfits and 4 emotes")
+	check(#Catalog.passItems("explosions") == 3, "Explosion Styles: 3 styles")
+	check(
+		#Catalog.masteryItems() == 9 and Catalog.masteryItems()[9].mastery == 10,
+		"a mastery item per level 2-10"
+	)
+	check(Catalog.byId.starter_paint ~= nil, "the first goal is a real item")
+	local pool = Catalog.cratePool()
+	for _, rarity in Catalog.RARITIES do
+		check(#pool[rarity] > 0, "crate has " .. rarity .. " items")
+		for _, item in pool[rarity] do
+			check(item.source == "shop" or item.source == "crate", item.id .. " in crate pool")
+		end
+	end
+	local total = 0
+	for _, row in ShopMath.oddsTable() do
+		total += row.percent
+	end
+	near(total, 100, 1e-6, "crate odds add to 100%")
+	for _, id in Config.TierOneVehicles do
+		check(Config.Vehicles[id] ~= nil and Config.Vehicles[id].tier == 1, id .. " is tier 1")
+	end
+	local stunts = 0
+	for _, def in Config.Vehicles do
+		if def.unlock.pass == "stunt" then
+			stunts += 1
+		end
+	end
+	check(stunts == 3, "Stunt Set has 3 side-grades")
+end)
+
+test("shop: rotation, crates, mastery, vehicles, rebirth", function()
+	local a, b = ShopMath.rotation(20000), ShopMath.rotation(20000)
+	check(#a == 4 and table.concat(a) == table.concat(b), "rotation is 4 and the same everywhere")
+	check(table.concat(ShopMath.rotation(20001)) ~= table.concat(a), "rotation changes daily")
+	local unique = {}
+	for _, id in a do
+		check(not unique[id] and Catalog.byId[id].source == "shop", "rotation items are distinct shop items")
+		unique[id] = true
+	end
+	-- Crate: rarity shares over many rolls match the odds
+	local random = Quests.rng(12345)
+	local counts = { common = 0, rare = 0, epic = 0, legendary = 0 }
+	local shinies = 0
+	local n = 20000
+	for _ = 1, n do
+		local item, shiny = ShopMath.rollCrate(random, {})
+		counts[item.rarity] += 1
+		if shiny then
+			shinies += 1
+		end
+	end
+	near(counts.common / n, 0.60, 0.02, "60% common")
+	near(counts.rare / n, 0.28, 0.02, "28% rare")
+	near(counts.epic / n, 0.10, 0.015, "10% epic")
+	near(counts.legendary / n, 0.02, 0.006, "2% legendary")
+	near(shinies / n, 0.02, 0.006, "1 in 50 shiny")
+	-- Duplicates refund 30%
+	local owned = {}
+	for _, item in Catalog.items do
+		owned[item.id] = { count = 1, shiny = true }
+	end
+	local item, _, duplicate, refund = ShopMath.rollCrate(Quests.rng(7), owned)
+	check(duplicate and refund == math.floor(Catalog.coinValue(item) * 0.3 + 0.5), "duplicate refunds 30%")
+	-- Mastery
+	check(
+		ShopMath.masteryLevel(0) == 1 and ShopMath.masteryLevel(24) == 1 and ShopMath.masteryLevel(25) == 2,
+		"levels"
+	)
+	check(ShopMath.masteryLevel(1500) == 10 and ShopMath.masteryNext(1500) == nil, "max level")
+	check(ShopMath.masteryNext(70) == 5, "points to next")
+	-- Vehicles
+	local profile = ProfileSchema.default()
+	profile.coins = 600
+	local ok, reason = ShopMath.canBuyVehicle(profile, "dune_hopper")
+	check(not ok and reason == "mastery", "Dune Hopper needs mastery 3")
+	profile.vehicles.starter_buggy.mastery = 75
+	check(ShopMath.canBuyVehicle(profile, "dune_hopper"), "then it can be bought")
+	profile.coins = 6000
+	ok, reason = ShopMath.canBuyVehicle(profile, "haul_hog")
+	check(not ok and reason == "stars", "Haul Hog needs 10 stars")
+	check(not ShopMath.canBuyVehicle(profile, "hop_rod"), "pass vehicles are not for sale")
+	check(not ShopMath.canBuyVehicle(profile, "starter_buggy"), "owned")
+	-- Equip rules
+	check(not ShopMath.canEquip(profile, "paint_cherry", "starter_buggy"), "not owned")
+	profile.inventory.paint_cherry = { count = 1, shiny = false }
+	check(ShopMath.canEquip(profile, "paint_cherry", "starter_buggy"), "owned item")
+	check(ShopMath.canEquip(profile, "mastery_rims", "starter_buggy"), "mastery 3 item on a level 3 car")
+	check(not ShopMath.canEquip(profile, "mastery_dust", "starter_buggy"), "mastery 4 item locked")
+	check(not ShopMath.canEquip(profile, "outfit_racer", nil), "pass item needs the pass")
+	profile.passes.rider = true
+	check(ShopMath.canEquip(profile, "outfit_racer", nil), "pass item with the pass")
+	-- Rebirth
+	check(not ShopMath.canRebirth(profile), "rebirth needs all 6")
+	for _, id in Config.TierOneVehicles do
+		profile.vehicles[id] = { owned = true, mastery = 0, parts = {} }
+	end
+	profile.stars = 30
+	check(ShopMath.canRebirth(profile), "all 6 owned")
+	ShopMath.rebirth(profile)
+	check(profile.coins == 0 and profile.stars == 0 and profile.rebirths == 1, "coins and stars reset")
+	check(
+		profile.vehicles.bumble_bus.owned and profile.inventory.paint_cherry ~= nil,
+		"vehicles and items kept"
+	)
+	near(ShopMath.capMultiplier(1), 1.05, 1e-9, "caps rise 5% per rebirth")
+	near(ShopMath.capMultiplier(20), 1.5, 1e-9, "to +50%")
+end)
+
+test("quests: picks, progress, streak", function()
+	local daily = Quests.pickDaily(123456, { "tracks" })
+	check(#daily == 3, "3 daily quests")
+	local tiers = {}
+	for _, state in daily do
+		local def = Quests.byId[state.id]
+		check(def.mode == "tracks", "tracks quests while only Tracks is live")
+		tiers[def.tier] = true
+	end
+	check(tiers[1] and tiers[2] and tiers[3], "one of each reward tier")
+	local again = Quests.pickDaily(123456, { "tracks" })
+	check(again[1].id == daily[1].id and again[3].id == daily[3].id, "same seed, same quests")
+	local all = Quests.pickDaily(99, { "tracks", "brawl", "highway" })
+	local modes = {}
+	for _, state in all do
+		modes[Quests.byId[state.id].mode] = true
+	end
+	check(modes.tracks and modes.brawl and modes.highway, "one per mode when all are live")
+	check(#Quests.DAILY == 24, "a pool of 24")
+	check(#Quests.pickWeekly(5, { "tracks" }) == 3, "3 weekly quests")
+	-- Progress
+	local list = {
+		{ id = "d_finish3", progress = 0, claimed = false },
+		{ id = "d_player2", progress = 0, claimed = false, keys = {} },
+	}
+	check(#Quests.apply(list, "finish", 2) == 0 and list[1].progress == 2, "counts up")
+	check(#Quests.apply(list, "finish", 5) == 1 and list[1].progress == 3, "done at the target, capped")
+	Quests.apply(list, "playerMapFinish", 1, "mapA")
+	Quests.apply(list, "playerMapFinish", 1, "mapA")
+	check(list[2].progress == 1, "the same map counts once")
+	Quests.apply(list, "playerMapFinish", 1, "mapB")
+	check(Quests.isDone(list[2]), "two different maps")
+	check(
+		Quests.reward(list[1], Config.Quests) == 60 and Quests.reward(list[2], Config.Quests) == 80,
+		"rewards by tier"
+	)
+	check(Quests.text(list[1]) == "Finish 3 runs", "quest text")
+	local peak = { { id = "d_score10k", progress = 0, claimed = false } }
+	Quests.apply(peak, "highwayScore", 6000)
+	Quests.apply(peak, "highwayScore", 5000)
+	check(peak[1].progress == 6000, "a best-run quest keeps the best, not the sum")
+	-- Streak
+	local d, can = Quests.streakNext(0, 0, 100)
+	check(d == 1 and can, "first claim is day 1")
+	d, can = Quests.streakNext(3, 100, 100)
+	check(not can, "once a day")
+	d = Quests.streakNext(3, 100, 101)
+	check(d == 4, "next day")
+	d = Quests.streakNext(5, 100, 102)
+	check(d == 5, "one missed day steps back one")
+	d = Quests.streakNext(2, 100, 110)
+	check(d == 1, "never below day 1")
+	d = Quests.streakNext(7, 100, 101)
+	check(d == 1, "the loop starts again after day 7")
+	check(Quests.weekOf(4) == 1 and Quests.weekOf(3) == 0, "weeks start on Monday")
+end)
+
 ---------------------------------------------------------------------------
 -- Optional: check the built place file has the scripts in the right services
 local placePath = process.args[1]
@@ -1354,6 +1555,10 @@ if placePath then
 				"MapNames",
 				"MapRules",
 				"MapStats",
+				"Catalog",
+				"Looks",
+				"Quests",
+				"ShopMath",
 				"Movers",
 				"PieceCatalog",
 				"TracksMath",
@@ -1412,6 +1617,9 @@ if placePath then
 				"MapPlayService",
 				"ModerationService",
 				"BrowseService",
+				"ShopService",
+				"PurchaseService",
+				"QuestService",
 				"TestTrack",
 				"TracksService",
 				"VehicleService",

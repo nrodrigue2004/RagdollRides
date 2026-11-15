@@ -23,6 +23,7 @@ local GhostCodec = require(Shared.GhostCodec)
 local Net = require(Shared.Net)
 local PoseCodec = require(Shared.PoseCodec)
 local ProfileSchema = require(Shared.ProfileSchema)
+local ShopMath = require(Shared.ShopMath)
 local Signal = require(Shared.Util.Signal)
 local StarterMaps = require(Shared.StarterMaps)
 local TracksMath = require(Shared.TracksMath)
@@ -38,7 +39,7 @@ local TracksService = {}
 
 TracksService.MapChanged = Signal.new() -- (player, mapId or nil)
 TracksService.RunStarted = Signal.new() -- (player, map)
-TracksService.Finished = Signal.new() -- (player, map, firstFinish): a paid finish on any map
+TracksService.Finished = Signal.new() -- (player, map, firstFinish, { tier, isBest, trailCoins }): a paid finish
 
 local TEST_TRACK = "test_track" -- Studio and admins: the milestone 1 test track, for the dev panel tests
 
@@ -316,20 +317,24 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 	local entry = profile.tracks[mapId]
 	local daily = profile.daily
 	local firstFinish = entry == nil
-	local payout = TracksMath.payout({
-		timeSeconds = time,
-		creatorSeconds = map.creatorTime,
-		previousTier = if entry then entry.stars or 0 else 0,
-		previousBestMs = if entry then entry.best else nil,
-		isStarter = StarterMaps.byId[mapId] ~= nil,
-		finishesToday = daily.mapFinishes[mapId] or 0,
-		trailCoins = math.clamp(trailCoins, 0, map.coins),
-		coinValue = map.coinValue,
-		reward = map.reward,
-		rewardClaimed = map.tut ~= nil and profile.tut[map.tut] == true,
-		boost = EconomyService.boostFor(player),
-		earnedToday = daily.coinsByMode.tracks,
-	}, Config.Tracks)
+	local payout = TracksMath.payout(
+		{
+			timeSeconds = time,
+			creatorSeconds = map.creatorTime,
+			previousTier = if entry then entry.stars or 0 else 0,
+			previousBestMs = if entry then entry.best else nil,
+			isStarter = StarterMaps.byId[mapId] ~= nil,
+			finishesToday = daily.mapFinishes[mapId] or 0,
+			trailCoins = math.clamp(trailCoins, 0, map.coins),
+			coinValue = map.coinValue,
+			reward = map.reward,
+			rewardClaimed = map.tut ~= nil and profile.tut[map.tut] == true,
+			boost = EconomyService.boostFor(player),
+			earnedToday = daily.coinsByMode.tracks,
+			capMultiplier = ShopMath.capMultiplier(profile.rebirths),
+		} :: any,
+		Config.Tracks
+	)
 
 	-- Record the result
 	local previousBest = if entry then entry.best else nil
@@ -384,7 +389,11 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 		custom = map.custom == true,
 		myRating = if map.custom then profile.ratings[mapId] else nil,
 	})
-	TracksService.Finished:Fire(player, map, firstFinish)
+	TracksService.Finished:Fire(player, map, firstFinish, {
+		tier = payout.tier,
+		isBest = payout.isBest,
+		trailCoins = math.clamp(trailCoins, 0, map.coins),
+	})
 end
 
 local function nearRespawn(mapId: string, position: Vector3): boolean

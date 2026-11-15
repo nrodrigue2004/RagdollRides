@@ -108,7 +108,7 @@ end
 
 local function explode(o: Own)
 	local position = o.chassis.Position
-	ExplosionFx.play(position)
+	ExplosionFx.play(position, o.model:GetAttribute("ExplosionStyle"))
 	local count = random:NextInteger(DC.explosionPanels[1], DC.explosionPanels[2])
 	o.visuals:explode(count)
 	juice("Explosion", { scale = 1, point = position })
@@ -347,7 +347,7 @@ local function onRemoteState(userId: number, data: buffer)
 	remote.visuals:setFire(bit32.band(decoded.flags, DamageModel.FLAG_FIRE) ~= 0)
 	if exploded and not wasExploded and model.PrimaryPart then
 		local position = model.PrimaryPart.Position
-		ExplosionFx.play(position)
+		ExplosionFx.play(position, model:GetAttribute("ExplosionStyle"))
 		remote.visuals:explode(random:NextInteger(DC.explosionPanels[1], DC.explosionPanels[2]))
 		shockwaveFrom(position)
 	end

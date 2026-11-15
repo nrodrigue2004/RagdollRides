@@ -41,6 +41,7 @@ local cueLabel: TextLabel
 local toastLabel: TextLabel
 local buttonsFrame: Frame
 local resultsFrame: Frame? = nil
+local holdCurrent: (() -> ())? = nil
 
 local shownCoins = 0
 local coinTween: Tween? = nil
@@ -168,6 +169,9 @@ export type Callbacks = {
 	onMaps: () -> (),
 	onBuild: () -> (),
 	onSettings: () -> (),
+	onShop: (() -> ())?,
+	onGarage: (() -> ())?,
+	onQuests: (() -> ())?,
 }
 
 function TracksHud.build(parentGui: ScreenGui, resetButton: GuiObject?, callbacks: Callbacks)
@@ -223,6 +227,51 @@ function TracksHud.build(parentGui: ScreenGui, resetButton: GuiObject?, callback
 	end
 	topLeft:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeGoal)
 	placeGoal()
+
+	-- Left column under the goal bar: SHOP, GARAGE, QUESTS (the hub's stalls replace them in milestone 6)
+	local column = Instance.new("Frame")
+	column.Name = "LeftColumn"
+	column.BackgroundTransparency = 1
+	column.Size = UDim2.fromScale(0.1, 0.36)
+	column.Parent = root
+	local columnList = Instance.new("UIListLayout")
+	columnList.FillDirection = Enum.FillDirection.Vertical
+	columnList.Padding = UDim.new(0, 10)
+	columnList.SortOrder = Enum.SortOrder.LayoutOrder
+	columnList.Parent = column
+	for index, entry in
+		{
+			{ "Shop", "SHOP", callbacks.onShop },
+			{ "Garage", "GARAGE", callbacks.onGarage },
+			{ "Quests", "QUESTS", callbacks.onQuests },
+		}
+	do
+		local onPress = entry[3]
+		if onPress then
+			local b = squareButton(column, entry[1], entry[2], index)
+			b.Size = UDim2.fromScale(0.75, 0.75)
+			b.SizeConstraint = Enum.SizeConstraint.RelativeXX
+			b.Activated:Connect(onPress)
+			local dot = Instance.new("Frame")
+			dot.Name = "Dot"
+			dot.AnchorPoint = Vector2.new(0.5, 0.5)
+			dot.Position = UDim2.fromScale(0.92, 0.08)
+			dot.Size = UDim2.fromScale(0.28, 0.28)
+			dot.BackgroundColor3 = RED
+			dot.Visible = false
+			corner(dot, 0.5)
+			dot.Parent = b
+		end
+	end
+	local function placeColumn()
+		column.Position = UDim2.fromOffset(
+			16,
+			goalFrame.AbsolutePosition.Y - gui.AbsolutePosition.Y + goalFrame.AbsoluteSize.Y + 12
+		)
+	end
+	goalFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(placeColumn)
+	goalFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeColumn)
+	placeColumn()
 
 	-- Top centre: timer, checkpoints, split
 	timerLabel = text(root, "Timer", "0:00.00", WHITE)
@@ -299,6 +348,15 @@ end
 ---------------------------------------------------------------------------
 
 export type Goal = { label: string, coins: number, stars: number? }
+
+-- A red dot on a top-bar or left-column button (something to claim)
+function TracksHud.setDot(name: string, visible: boolean)
+	local b = root and root:FindFirstChild(name, true)
+	local dot = b and b:FindFirstChild("Dot")
+	if dot and dot:IsA("GuiObject") then
+		dot.Visible = visible
+	end
+end
 
 function TracksHud.setButtonVisible(name: string, visible: boolean)
 	local b = buttonsFrame and buttonsFrame:FindFirstChild(name) :: GuiObject?
@@ -617,7 +675,10 @@ function TracksHud.showResults(view: ResultView, actions: ResultActions)
 	end
 
 	local done = false
-	local held = false -- the player is rating or reporting: no auto NEXT
+	local held = false -- the player is rating, reporting or looking at an offer: no auto NEXT
+	holdCurrent = function()
+		held = true
+	end
 	local opened = os.clock()
 	local function finish(choice: () -> ())
 		if done or os.clock() - opened < cfg.resultsSkippableAfter then
@@ -666,6 +727,13 @@ local REPORT_REASONS = {
 	{ id = "Impossible", label = "Can't finish" },
 	{ id = "Spam", label = "Spam copy" },
 }
+
+-- Stop the results card's auto NEXT (an offer or a panel opened over it)
+function TracksHud.holdResults()
+	if holdCurrent then
+		holdCurrent()
+	end
+end
 
 function TracksHud.ratePanel(card: Frame, rate: RateView, hold: () -> ())
 	local panel = Instance.new("Frame")

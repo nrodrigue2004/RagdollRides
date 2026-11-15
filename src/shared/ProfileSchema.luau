@@ -351,6 +351,7 @@ function ProfileSchema.clientView(profile: { [string]: any }, now: number?): { [
 		},
 		streak = { day = profile.streak.day or 0, nextDay = nextDay, canClaim = canClaim },
 		starterOffered = profile.flags.starterOffered == true,
+		starterBought = profile.flags.starterBought == true,
 	}
 end
 

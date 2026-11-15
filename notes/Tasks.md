@@ -8,7 +8,7 @@ Milestones in spec order (numbers as in the spec). Each one is done when its spe
 3. **2 Core loop**: code done 2026-11-15. Checkpoints, finish, coins, ghosts, Pip's Hill, 5 maps, profile saves v1. Done when: 5 people finish a session with no server errors, and 5 first-time testers finish Pip's Hill in under 30 s.
 4. **3 Map builder**: code done 2026-11-15. Done when: spec "Tracks and builder" checks pass for the builder (build, save, reload and play a map in under 10 minutes; limits enforced by the server; publish gates; preset names only).
 5. **4 Browse and safety**: code done 2026-11-15. Browse tabs, play published maps with pay and royalties, ratings, Popular ranking, reports, auto-hide, strikes and bans, admin tools. Done when: spec "Browse and safety" checks pass (a published map shows in Newest and plays for a second player with pay; 15 counted reports from over 25% of its finishers hide it until an admin looks; the third admin-confirmed hide in 90 days bans publishing for 7 days; ratings move Popular).
-6. **5 Shop, passes, quests and streak**.
+6. **5 Shop, passes, quests and streak**: code done 2026-11-15. Shop (daily spotlight, coins, passes, Crash Crate with odds on the card), garage (cars, 7 look slots, rider, rebirth), mastery, Robux passes and products with one receipt handler, daily and weekly quests, the daily chest, the 7-day streak, gifts, the one-time Starter Pack offer. Done when: spec "Economy" checks pass (every purchase grants once and survives a rejoin; nothing sold changes handling; the crate odds match the card over 20,000 rolls (unit test); a new player earns their first shop look inside 15 minutes), and nate has created the passes, products and rebirth badge in the Creator Dashboard (ids in Config.Monetization and Config.Badges).
 7. **6 Hub and round manager, plus the party queue** (quick races fit here).
 8. **7 Bumper Brawl**. Done when: spec "Bumper Brawl" checks pass.
 9. **8 Highway Havoc**.
@@ -85,6 +85,24 @@ Milestone 4 (browse and safety; Studio API access on, so the map stores are real
 - [ ] Leave a player map and wait 60 s: the map's parts are gone from Workspace.Maps on the server.
 - [ ] Phone: the browse tabs scroll sideways, the cards and arrows are easy to tap, the rating stars are big enough.
 
+Milestone 5 (shop, garage, quests; DEV → Pick + GRANT gives any pass or product without Robux, Studio only):
+- [ ] SHOP, GARAGE and QUESTS buttons sit on the left under the goal bar; QUESTS has a red dot when something is ready to claim (the streak on your first visit each day).
+- [ ] SHOP → TODAY: the line "Nothing here makes you faster or stronger.", the Crash Crew Bundle, 4 spotlight looks (the same in every server on the same day), the crate. Each card shows one price, coins or Robux.
+- [ ] Buy a look with coins: the coins count down, "... is yours! Wear it in the GARAGE." Not enough coins: the button is greyed out.
+- [ ] CRATE: the odds table is on the card. Open one with 1,000 coins: the box shakes, opens at about 1.6 s with the rarity colour, closes by itself or with a tap. A duplicate shows "+N coins back". The Robux crate card only shows where PolicyService allows paid random items.
+- [ ] Any Robux button answers "Coming soon!" while the ids are 0. DEV GRANT each pass and product: rider (outfits and hats in GARAGE → RIDER), vip (TRAILS → SWITCH TO FRONT works), stunt (3 stunt cars in CARS, DRIVE them), explosions (BOOM styles), starter, coins_s to coins_xl, crate (reveal), extra_slot (BUILD shows one more slot), bundle.
+- [ ] GARAGE → CARS: owned cars show DRIVE and mastery; locked ones their price and needs (Dune Hopper: Starter Buggy mastery 3). DRIVE swaps the car at the map's start.
+- [ ] GARAGE → PAINT, RIMS, TRAILS, HORNS, BOOM, PARTS, DECALS: EQUIP restyles your car at once and other players see it; TAKE OFF goes back to the car's own look. Trails draw behind the wheels; the crash explosion uses the BOOM style. Handling is the same with every look (drive a lap with and without).
+- [ ] GARAGE → RIDER: hats sit on the helmet and fall off with the rider; outfits recolour the suit.
+- [ ] Finish 5 Tracks runs on one car: "... mastery 2! New look: ..." and a red dot on GARAGE until you open it.
+- [ ] QUESTS: 3 daily and 3 weekly quests with progress bars. Finish runs: "Quest done: ..." toasts, CLAIM pulses and pays. All 3 dailies claimed opens the daily chest (150 coins or a common look); all 3 weeklies give 5 stars.
+- [ ] Login streak: CLAIM DAY 1 pays 50 coins, then COME BACK TOMORROW. (To test more days, change streak.lastClaim in the DataStore or use Fresh save.)
+- [ ] Gifts (2 players who are Roblox friends, live server): GIFT sends 10 of your coins once a day; the friend sees "A friend sent you 10 coins!".
+- [ ] First finish of a fresh save: about 1.5 s into the results card the Starter Pack offer shows once, the NEXT countdown stops, NO THANKS closes it, and it never shows again (also after a rejoin).
+- [ ] REBIRTH: needs all 6 launch cars (DEV GRANT coins, buy them). HOLD TO REBIRTH for 1.5 s: coins and stars go to 0, cars and looks stay, finishes pay 5% more.
+- [ ] Buy something, leave and rejoin: it is still owned. A Robux purchase in a live test (after ids exist) is granted once even if you leave during the prompt.
+- [ ] Phone: shop tabs scroll sideways, cards and claim buttons are easy to tap.
+
 ## Placeholder art and sound
 - PLACEHOLDER ART: all 6 vehicle bodies (VehicleBuilder BODIES blockouts), the rider rig and face, test track parts.
 - PLACEHOLDER ART: dented and crushed panel looks (procedural push-in and darken; real looks go in ReplicatedStorage.Assets.PanelLooks), cracked glass (frosted, no decal), smoke, flame, glitter and explosion particles (built-in textures), explosion glow and ring (neon parts).
@@ -94,3 +112,5 @@ Milestone 4 (browse and safety; Studio API access on, so the map stores are real
 - New empty sound ids: BuilderPlace, BuilderRemove, Publish, PistonPush.
 - Saved but not used yet: the "Fewer flashes" and "Effects" settings (the VFX pass reads them); a builder map's Full damage flag (free runs already use full damage; quick races in milestone 6 read it to pick TracksFullDamage over TracksRace).
 - PLACEHOLDER ART: browse cards (plain frames, a sketch made of flat coloured frames, text badges), the rating stars and report flag (text glyphs).
+- PLACEHOLDER ART: shop, garage and quest screens (flat cards, colour swatches, text glyphs for coins, stars and Robux), the crate box and reveal (a shaking frame), look parts (spoiler, bull bar, roof rack, fins, decal strips and mastery badge are plain blocks), hats (blocks and cylinders), trails (plain colour Roblox Trails).
+- Horns have no sound (HORNS can be equipped; the honk plays nothing until sounds are picked). Rider Pass emotes are granted and saved but there is no emote wheel yet (milestone 9 polish).

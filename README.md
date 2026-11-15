@@ -18,6 +18,7 @@ A Roblox physics driving game: weighty cars, heavy crashes, a rider who gets thr
 - Gamepad: RT gas, LT brake, left stick steer and lean, A jump, B handbrake, X reset or respawn, Y flip.
 - Phone: on-screen buttons. Tap anywhere while thrown to flail.
 - Top right: **MAPS** opens browse (Featured, Popular, Newest, Friends, My Maps, Starter; tap a card to drive it, rate and report from its results card), **BUILD** opens the map builder, the **cog** opens settings (button size, left-handed layout, steering help, shake, reduced motion, dents, volumes).
+- Left, under the goal bar: **SHOP** (daily spotlight, coins, passes, Crash Crate), **GARAGE** (cars, paint, rims, trails, horns, explosions, parts, decals, rider, rebirth) and **QUESTS** (daily and weekly quests, daily chest, login streak, gifts). Robux buttons say "Coming soon" until the pass and product ids are in `Config.Monetization`; in Studio, DEV → Pick + GRANT gives any of them for free.
 - Builder (phone): tap a piece in the tray, tap the plot to place it; tap a placed piece to select it, drag to move it; one finger orbits, two fingers pan and pinch. TEST drives the map (from a selected checkpoint it is a practice run), BUILD comes back. MAP names, tags and publishes it.
 - Builder (PC): number keys pick pieces (Shift for 11 to 20), R rotate, T tilt, F size, Q/E down and up, Delete, Ctrl+Z / Ctrl+Y, Esc deselects; right drag orbits, middle drag or WASD pans, the wheel zooms.
 

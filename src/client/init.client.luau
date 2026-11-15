@@ -43,6 +43,7 @@ local ORDER = {
 	{ "Tracks", "TracksClient" },
 	{ "Builder", "BuilderClient" },
 	{ "Browse", "BrowseClient" },
+	{ "Shop", "ShopClient" },
 	{ "Dev", "DevPanel" },
 }
 

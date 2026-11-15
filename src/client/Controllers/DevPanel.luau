@@ -543,7 +543,7 @@ local function build()
 	local tests = Instance.new("Frame")
 	tests.BackgroundTransparency = 1
 	tests.Position = UDim2.fromOffset(0, 70)
-	tests.Size = UDim2.new(1, 0, 0, 194)
+	tests.Size = UDim2.new(1, 0, 0, 244)
 	tests.Parent = panel
 	local grid = Instance.new("UIGridLayout")
 	grid.CellSize = UDim2.fromOffset(104, 34)
@@ -621,10 +621,43 @@ local function build()
 		log("Profile reset: you are a first-time player again (back to Pip's Hill)")
 	end)
 
+	-- Milestone 5: grant a pass or product without Robux (Studio only), to try every purchase before
+	-- the ids exist. Tap the left button to pick, GRANT to give it.
+	local grants = {
+		"rider",
+		"vip",
+		"stunt",
+		"explosions",
+		"starter",
+		"coins_s",
+		"coins_m",
+		"coins_l",
+		"coins_xl",
+		"crate",
+		"extra_slot",
+		"bundle",
+	}
+	local grantIndex = 1
+	local pick = button(tests, "Pick: rider", 19, function() end)
+	pick.Activated:Connect(function()
+		grantIndex = grantIndex % #grants + 1
+		pick.Text = "Pick: " .. grants[grantIndex]
+	end)
+	button(tests, "GRANT", 20, function()
+		Net.send("Dev.Grant", grants[grantIndex])
+		log("Granted " .. grants[grantIndex] .. " (no Robux, Studio only)")
+	end)
+	button(tests, "+12000 coins", 21, function()
+		for _ = 1, 3 do
+			Net.send("Dev.Grant", "coins_l")
+		end
+		log("Granted 3 x 4000 coins")
+	end)
+
 	logLabel = Instance.new("TextLabel")
 	logLabel.BackgroundTransparency = 1
-	logLabel.Position = UDim2.fromOffset(0, 272)
-	logLabel.Size = UDim2.new(1, 0, 1, -280)
+	logLabel.Position = UDim2.fromOffset(0, 322)
+	logLabel.Size = UDim2.new(1, 0, 1, -330)
 	logLabel.Font = Enum.Font.Code
 	logLabel.TextSize = 14
 	logLabel.TextWrapped = true

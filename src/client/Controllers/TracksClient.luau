@@ -693,6 +693,7 @@ local NOTICES = {
 	publishBanned = "Sharing maps is paused for your account for now.",
 	adminDone = "Done.",
 	adminFailed = "That didn't work. Try again.",
+	giftReceived = "A friend sent you 10 coins!",
 }
 
 function TracksClient.init(all)
@@ -714,6 +715,15 @@ function TracksClient.start()
 			if controllers.Builder then
 				controllers.Builder.onBuildButton()
 			end
+		end,
+		onShop = function()
+			controllers.Shop.toggle("shop")
+		end,
+		onGarage = function()
+			controllers.Shop.toggle("garage")
+		end,
+		onQuests = function()
+			controllers.Shop.toggle("quests")
 		end,
 		onSettings = function()
 			if controllers.Settings.isOpen() then

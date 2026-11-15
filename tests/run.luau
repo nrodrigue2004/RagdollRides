@@ -1593,11 +1593,12 @@ if placePath then
 				"TracksClient",
 				"BuilderClient",
 				"BrowseClient",
+				"ShopClient",
 			}
 		do
 			check(client ~= nil and client:FindFirstChild("Controllers"):FindFirstChild(name) ~= nil, name)
 		end
-		for _, name in { "DamageVisuals", "ExplosionFx", "MeshDents", "Confetti" } do
+		for _, name in { "DamageVisuals", "ExplosionFx", "MeshDents", "Confetti", "LookFx" } do
 			local fx = client and client:FindFirstChild("Fx")
 			check(fx ~= nil and fx:FindFirstChild(name) ~= nil, "Fx." .. name)
 		end
@@ -1605,6 +1606,7 @@ if placePath then
 		check(ui ~= nil and ui:FindFirstChild("TracksHud") ~= nil, "Ui.TracksHud")
 		check(ui ~= nil and ui:FindFirstChild("BuilderHud") ~= nil, "Ui.BuilderHud")
 		check(ui ~= nil and ui:FindFirstChild("BrowseHud") ~= nil, "Ui.BrowseHud")
+		check(ui ~= nil and ui:FindFirstChild("ShopHud") ~= nil, "Ui.ShopHud")
 		local services = server and server:FindFirstChild("Services")
 		for _, name in
 			{

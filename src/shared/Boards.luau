@@ -73,6 +73,21 @@ function Boards.rows(
 	return list, mine
 end
 
+-- Mode boards (Boards_v1, higher is better): "<prefix>_D<day>" daily and "<prefix>_W<week>" weekly, e.g.
+-- HW_Score_D20406 (days and weeks as Shared/Quests counts them)
+function Boards.modeScope(prefix: string, period: string, number: number): string
+	return string.format("%s_%s%d", prefix, period, number)
+end
+
+-- Best Bone-Break Run: breaks reached, ties by score (one number so the board sorts it)
+function Boards.bonesValue(breaks: number, score: number): number
+	return breaks * 1000000 + math.clamp(math.floor(score), 0, 999999)
+end
+
+function Boards.bonesOf(value: number): (number, number)
+	return value // 1000000, value % 1000000
+end
+
 -- Should a finish post to the boards? Only a new best (a lower time), and never while board-banned.
 function Boards.shouldPost(previousMs: number?, ms: number, banned: boolean): boolean
 	if banned or ms <= 0 then

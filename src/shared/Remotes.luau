@@ -334,20 +334,60 @@ local Remotes: { [string]: RemoteDef } = {
 	["Brawl.Leave"] = { dir = "C2S", schema = {}, rate = 0.5, burst = 1, since = "7" }, -- back to the park
 	["Brawl.Practice"] = { dir = "C2S", schema = {}, rate = 0.5, burst = 1, since = "7" }, -- skip practice
 
-	-- Milestone 8
+	-- Milestone 8: Highway Havoc
+	-- On join and when the UTC day changes: { seed, epoch (server time of road time 0), event, versus }
+	["Highway.Seed"] = { dir = "S2C", since = "8" },
+	-- A run starts: { run, s, lane, tutorial, origin?, lanes?, startAt, endsAt, length }
+	["Highway.Start"] = { dir = "S2C", since = "8" },
+	-- The hitter reports a hit: kind (0 traffic, 1 prop, 2 player in versus, 3 tutorial car), the slot,
+	-- prop, user or tutorial car id, impact I, chain link (0 = your own car hit it; 1 to 3 = a car you sent
+	-- flying hit it)
 	["Highway.Hit"] = {
 		dir = "C2S",
 		schema = {
-			{ t = "integer", min = 0, max = 4095 },
-			{ t = "number", min = 0, max = 1000 },
+			{ t = "integer", min = 0, max = 3 },
 			{ t = "integer" },
+			{ t = "number", min = 0, max = 1000 },
+			{ t = "integer", min = 0, max = 3 },
 		},
 		rate = 12,
 		burst = 12,
 		since = "8",
 	},
-	["Highway.Seed"] = { dir = "S2C", since = "8" },
+	-- Tricks: "near" (a traffic slot id, speed), "air" (0, seconds airborne), "flip" (0, flips landed)
+	["Highway.Trick"] = {
+		dir = "C2S",
+		schema = {
+			{ t = "string", oneOf = { "near", "air", "flip" } },
+			{ t = "integer" },
+			{ t = "number", min = 0, max = 300 },
+		},
+		rate = 4,
+		burst = 4,
+		since = "8",
+	},
+	-- Confirmed totals (at most 4 a second): { score, multiplier, comboUntil, breaks, bestMultiplier }
 	["Highway.Score"] = { dir = "S2C", since = "8" },
+	-- Run events: pileStart, pileup, bone, wreck (to others: a car someone hit), meterFull, chest, flagged
+	["Highway.Event"] = { dir = "S2C", since = "8" },
+	-- The results card: { score, bones, bestMultiplier, pileups, coins, capped, best, newBest, havoc,
+	-- target, chest, reason, tutorial, event }
+	["Highway.End"] = { dir = "S2C", since = "8" },
+	["Highway.Again"] = { dir = "C2S", schema = {}, rate = 0.5, burst = 1, since = "8" }, -- Ride again
+	["Highway.Leave"] = { dir = "C2S", schema = {}, rate = 0.5, burst = 1, since = "8" }, -- back to the park
+	-- Highway boards: board ("score" or "bones"), tab ("friends", "daily", "weekly")
+	["Highway.Board"] = {
+		dir = "C2S",
+		schema = {
+			{ t = "string", oneOf = { "score", "bones" } },
+			{ t = "string", oneOf = { "friends", "daily", "weekly" } },
+		},
+		rate = 1,
+		burst = 3,
+		since = "8",
+	},
+	["Highway.BoardData"] = { dir = "S2C", since = "8" },
+	-- A bone broke: the rider piece (1 Head, 2 Torso, 3 LeftArm, 4 RightArm, 5 LeftLeg, 6 RightLeg) and I
 	["Bone.Break"] = {
 		dir = "C2S",
 		schema = { { t = "integer", min = 1, max = 6 }, { t = "number", min = 0, max = 1000 } },

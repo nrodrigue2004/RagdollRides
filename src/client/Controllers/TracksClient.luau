@@ -754,6 +754,7 @@ local NOTICES = {
 	raceFromHub = "Quick races start from the hub's race pad.",
 	modeSoon = "Coming soon! This mode is being built.",
 	rankedLocked = "Ranked opens after 3 casual Bumper Brawl rounds. Play some casual first!",
+	versusLocked = "Versus opens after 2 co-op Highway runs. Ride co-op first!",
 	seasonRewards = "New ranked season! Your rewards are in the garage.",
 	teleportFailed = "Couldn't get there. Try again in a moment!",
 }
@@ -794,11 +795,15 @@ function TracksClient.start()
 				controllers.Hub.goHub()
 			elseif controllers.Brawl then
 				controllers.Brawl.goHome()
+			elseif controllers.Highway then
+				controllers.Highway.goHome()
 			end
 		end,
 		onTop = function()
 			if controllers.Hub then
 				controllers.Hub.openBoard()
+			elseif controllers.Highway then
+				controllers.Highway.openBoard()
 			end
 		end,
 		onSettings = function()
@@ -812,9 +817,10 @@ function TracksClient.start()
 	TracksHud.setTimer(nil)
 	TracksHud.setCheckpoints(0, 0)
 	if controllers.Hub == nil then
-		-- A mode place (Cinder Cove): no maps, builder or map boards here; HUB goes back to the park
+		-- A mode place (Cinder Cove, Sunny Pass): no maps or builder here; HUB goes back to the park.
+		-- TOP shows the Highway boards in Sunny Pass.
 		for _, name in { "Maps", "Build", "Top" } do
-			TracksHud.setButtonVisible(name, false)
+			TracksHud.setButtonVisible(name, name == "Top" and controllers.Highway ~= nil)
 		end
 		TracksHud.setButtonVisible("Hub", true)
 	end

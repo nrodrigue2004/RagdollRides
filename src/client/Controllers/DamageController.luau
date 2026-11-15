@@ -53,6 +53,8 @@ type Remote = {
 
 local controllers: any = nil
 local own: Own? = nil
+-- A mode can ignore some impacts (Highway co-op: bumping another player does no damage)
+local impactFilter: ((any) -> boolean)? = nil
 local remotes: { [Model]: Remote } = {}
 local random = Random.new()
 
@@ -128,6 +130,9 @@ end
 local function onImpact(info)
 	local o = own
 	if not o or not o.rules.looks or o.damage.exploded then
+		return
+	end
+	if impactFilter and not impactFilter(info) then
 		return
 	end
 	local cf = o.chassis.CFrame
@@ -402,16 +407,26 @@ function DamageController.damageZone(zone: number, amount: number)
 	end
 end
 
--- Pit Wrench (Bumper Brawl): health back to every zone; a blown engine stays blown
-function DamageController.heal(amount: number)
+-- Pit Wrench (Bumper Brawl 50, Highway 30 and one lost wheel back): health back to every zone; a
+-- blown engine stays blown
+function DamageController.heal(amount: number, remountOne: boolean?)
 	local o = own
 	if not o or o.damage.exploded then
 		return
 	end
-	DamageModel.heal(o.damage, amount)
+	DamageModel.heal(o.damage, amount, remountOne)
 	refresh(o)
 	sendState(o)
 	juice("Repair")
+end
+
+-- An explosion this device made (a Highway traffic car): push and damage our car like any blast
+function DamageController.shockwave(position: Vector3)
+	shockwaveFrom(position)
+end
+
+function DamageController.setImpactFilter(fn: ((any) -> boolean)?)
+	impactFilter = fn
 end
 
 function DamageController.repair()

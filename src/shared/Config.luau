@@ -8,7 +8,7 @@
 
 local Config = {}
 
-Config.Version = "0.8.0-m7"
+Config.Version = "0.9.0-m8"
 
 ---------------------------------------------------------------------------
 -- World
@@ -553,6 +553,17 @@ Config.Sounds = {
 	ShieldUp = "",
 	RankUp = "", -- brass hit
 	Cheer = "",
+	-- Highway Havoc
+	Smash = "", -- traffic hit: crunch plus a cartoon boing
+	ComboUp = "", -- rising chime per multiplier step
+	ComboLost = "",
+	NearMiss = "", -- whoosh
+	Trick = "", -- air and flips
+	PileUp = "", -- big brass sting
+	BoneCrack = "", -- cartoon crack (no screams)
+	XRay = "", -- zap
+	HavocFull = "", -- the server meter fills
+	RunOver = "",
 }
 
 Config.Juice = {
@@ -599,6 +610,17 @@ Config.Juice = {
 	ShieldUp = {},
 	RankUp = { vibration = 0.5, vibrationTime = 0.08 },
 	Cheer = {},
+	-- Highway Havoc (the hit's own crash tier still plays its shake; these add the score layer)
+	Smash = { vibration = 0.4, vibrationTime = 0.04, sparks = 10 },
+	ComboUp = {},
+	ComboLost = {},
+	NearMiss = { vibration = 0.2, vibrationTime = 0.03 },
+	Trick = { vibration = 0.3, vibrationTime = 0.04 },
+	PileUp = { shake = 0.5, shakeTime = 0.2, vibration = 0.8, vibrationTime = 0.12 },
+	BoneCrack = { shake = 0.35, shakeTime = 0.1, vibration = 0.7, vibrationTime = 0.06 },
+	XRay = {},
+	HavocFull = { vibration = 0.5, vibrationTime = 0.1 },
+	RunOver = {},
 }
 
 ---------------------------------------------------------------------------
@@ -772,7 +794,7 @@ Config.Quests = {
 	streakOwnedCoins = 250, -- day 7 when you already own this week's cosmetic
 	giftCoins = 10,
 	-- Modes quests come from. A mode counts only once its place exists (Shared/Place.modeLive).
-	liveModes = { "tracks", "brawl" }, -- add "highway" in milestone 8
+	liveModes = { "tracks", "brawl", "highway" }, -- a mode counts only once Place.modeLive says so
 }
 
 ---------------------------------------------------------------------------
@@ -1001,6 +1023,195 @@ Config.Brawl = {
 		seasonOwnedCoins = 250,
 	},
 	countsKey = "brawl", -- this place's live player count (the hub's mode card)
+}
+
+---------------------------------------------------------------------------
+-- Highway Havoc (spec: Game modes > Highway Havoc; Bone breaks; Highway screens; Onboarding > Highway
+-- tutorial lane). Runs in its own places (Sunny Pass Co-op and Versus: highway.project.json,
+-- versus.project.json). Every number is (tune) unless the spec fixes it.
+---------------------------------------------------------------------------
+Config.Highway = {
+	maxPlayers = 8,
+	runLength = 210,
+	startSpeed = 50, -- you join already moving
+	resultsSkip = 2, -- the results card can be skipped after this
+	-- Road (built on each device from the server's seed; Shared/HighwayMath)
+	road = {
+		origin = { 0, 0, 0 }, -- the road's s = 0; it runs toward -Z with gentle seeded curves
+		laneWidth = 14,
+		lanes = 4,
+		shoulder = 8, -- each side, past the outer lane
+		thickness = 2,
+		segment = 50, -- one road part per 50 studs
+		step = 10, -- the centreline is integrated in 10-stud steps
+		curves = { { amp = 0.1, wave = 4000 }, { amp = 0.04, wave = 2000 } }, -- heading in radians
+		ahead = 650, -- built this far ahead of your car
+		behind = 150,
+		groundSize = 2048, -- the grass plane under the road (recentred as you drive)
+		maxS = 40000, -- past this a new run starts back at the beginning (keeps far-from-origin physics sane)
+	},
+	ramps = { grid = 425, jitter = 37, rampDayGrid = 200, length = 34, height = 7, lanes = 2 },
+	wrench = { every = 900, heal = 30, radius = 6 },
+	-- Traffic: deterministic from the seed and server time, so every device sees the same cars
+	traffic = {
+		count = 16, -- pooled cars around each player
+		physics = 8, -- the nearest ones are real physics bodies; the rest glide on their lane
+		physicsRange = 140,
+		ahead = 600,
+		behind = 150,
+		laneSpeeds = { 45, 53, 61, 70 }, -- slow lane on the right (lane 1) to the fast lane
+		grid = 100, -- one car slot per 100 studs per lane, moved up to 20 either way: 60 to 140 apart
+		jitter = 20,
+		empty = 0.35, -- share of slots with no car
+		maxForce = 90, -- lane-keeping force (times the car's mass): hits easily overpower it
+		stagger = 1.2, -- a hit under the wreck line knocks the car off its lane for this long
+		despawnAfter = 6, -- wrecks are removed this long after wrecking (or when far behind)
+		types = {
+			{
+				id = "compact",
+				base = 50,
+				size = { 6, 4.5, 11 },
+				mass = 0.6,
+				weight = 30,
+				color = { 120, 200, 255 },
+			},
+			{
+				id = "sedan",
+				base = 75,
+				size = { 6.5, 5, 13 },
+				mass = 1.0,
+				weight = 30,
+				color = { 255, 214, 120 },
+			},
+			{
+				id = "van",
+				base = 100,
+				size = { 7, 7, 14 },
+				mass = 1.4,
+				weight = 15,
+				color = { 170, 230, 140 },
+			},
+			{
+				id = "boxTruck",
+				base = 150,
+				size = { 8, 9, 20 },
+				mass = 2.0,
+				weight = 12,
+				color = { 245, 245, 245 },
+			},
+			{
+				id = "partyBus",
+				base = 200,
+				size = { 8, 9, 26 },
+				mass = 2.6,
+				weight = 7,
+				color = { 255, 140, 200 },
+			},
+			{
+				id = "foamTanker",
+				base = 250,
+				size = { 8, 8, 24 },
+				mass = 3.0,
+				weight = 6,
+				color = { 255, 170, 60 },
+			},
+		},
+	},
+	wreck = { single = 40, double = 20 }, -- a traffic car wrecks at one hit of I 40+, or two of I 20+
+	explode = { impact = 70, radius = 8, delay = 0.8 }, -- hit at I 70+, or near a blast: explodes in 0.8 s
+	-- Roadside props (kind, base value, weight); slots every 40 studs on each shoulder
+	props = {
+		slot = 40,
+		empty = 0.45,
+		kinds = {
+			{ id = "cone", base = 5, weight = 30 },
+			{ id = "fence", base = 5, weight = 20 },
+			{ id = "sign", base = 10, weight = 20 },
+			{ id = "barrier", base = 20, weight = 20 },
+			{ id = "billboard", base = 60, weight = 10 },
+		},
+	},
+	-- Destruction Score (shared with the server: Shared/Score)
+	score = {
+		speedDiv = 40,
+		speedMin = 0.5,
+		speedMax = 2.5,
+		comboWindow = 3,
+		comboSteps = { 2, 4, 7, 11, 16, 22, 30 }, -- x2 at 2 hits ... x8 at 30
+		nearMiss = { points = 25, gap = 2, speed = 70 },
+		air = { points = 25, every = 0.5, maxSeconds = 6 },
+		flip = { points = 300, max = 3 },
+		chain = { 0.5, 0.25, 0.125 },
+		pileup = { cars = 5, window = 4, base = 1000, per = 250 },
+		crack = 150, -- per bone break, times the combo
+		breakStep = 0.1, -- each break adds 0.1 to the break multiplier
+		perSecond = 2000, -- server caps
+		perEvent = 3000,
+		maxImpact = 250,
+		player = { base = 120, pairCooldown = 2 }, -- versus
+		coopRadius = 80, -- co-op pile-ups pay every player this close
+	},
+	hitCheck = { radius = 12, speedAllowance = 0.15, wreckRadius = 70, wreckLife = 8, propRadius = 14 },
+	-- Bone breaks (spec: Bone breaks, Highway Havoc only)
+	bones = {
+		total = 12,
+		seatImpact = 45, -- a Hard hit or Huge crash at I 45+ breaks a bone in the seat
+		ejectSpeed = 40, -- a thrown rider's piece hitting anything at 40+
+		cooldown = 0.5,
+		perCrash = 3,
+		crashWindow = 1.5, -- breaks this close together count as one crash
+		freeze = 0.2,
+		xray = 0.25,
+		finale = 1.2,
+	},
+	counterLabel = "Crack Count", -- BONE_COUNTER_LABEL (one string; nate may rename it)
+	coins = { per = 250, max = 120 },
+	dailyCap = 720,
+	dailyTarget = 15000, -- today's total opens the daily Havoc chest once
+	chest = { coins = 150, cosmeticChance = 0.5 },
+	meter = { goal = 100000, coins = 30, minShare = 1000 }, -- the server's Havoc meter
+	flaggedCoins = 0.5, -- a run with rejected hits earns half and never posts to a board
+	rejectLimit = 6,
+	packBehind = 120, -- a new run starts this far behind the last car on the road
+	versusUnlockRuns = 2,
+	-- First run (tut.highway): a quiet road of its own, 3 soft compacts ahead, a ramp, SMASH!
+	tutorial = {
+		length = 90,
+		origin = { 6000, 0, 0 }, -- each first-timer gets a quiet copy of the road out here
+		spacing = 220, -- studs between first-timers' copies
+		lanes = 2,
+		quiet = 3, -- traffic 3 times thinner
+		cars = { 140, 175, 210 }, -- the 3 compacts, this far ahead in your lane
+		carSpeed = 30,
+		rampAt = 650,
+		bumpAt = 20, -- the scripted bump that breaks the first bone, if none broke yet
+	},
+	-- Daily events (UTC weekday; announced by Highway Hal)
+	events = {
+		{
+			id = "lowGravity",
+			name = "LOW GRAVITY SUNDAY",
+			line = "Everything floats a little today!",
+			gravity = 0.6,
+		},
+		{ id = "rushHour", name = "RUSH HOUR", line = "Traffic is twice as thick!", spacing = 0.5 },
+		{
+			id = "foamTruck",
+			name = "FOAM TRUCK DAY",
+			line = "Foam tankers everywhere, and extra bouncy!",
+			tankers = 3,
+		},
+		{ id = "busParade", name = "BUS PARADE", line = "Party buses on parade!", buses = 3 },
+		{ id = "rampDay", name = "RAMP DAY", line = "Ramps every 200 studs!", ramps = true },
+		{ id = "pileupFriday", name = "PILE-UP FRIDAY", line = "Pile-ups pay double!", pileup = 2 },
+		{
+			id = "nightLights",
+			name = "NIGHT LIGHTS",
+			line = "Dusk on the highway. Traffic glows!",
+			night = true,
+		},
+	},
+	countsKey = "highway",
 }
 
 -- Badges (Creator Dashboard ids; 0 until nate creates them)

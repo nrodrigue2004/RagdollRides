@@ -64,6 +64,8 @@ function ProfileSchema.default(): { [string]: any }
 			quests = {},
 			chestClaimed = false,
 			adClaims = 0,
+			havoc = 0, -- Highway Destruction Score today (the daily Havoc target)
+			havocChest = false,
 		},
 		weekly = { week = 0, quests = {}, starsClaimed = false },
 		streak = { day = 0, lastClaim = 0 },
@@ -365,6 +367,11 @@ function ProfileSchema.clientView(profile: { [string]: any }, now: number?): { [
 		brawlRounds = profile.stats.brawlRounds or 0,
 		brawlWins = profile.stats.brawlWins or 0,
 		kos = profile.stats.kos or 0,
+		highwayRuns = profile.stats.highwayRuns or 0,
+		bestHighway = profile.stats.bestHighway or 0,
+		bestBones = profile.stats.bestBones or 0,
+		havocToday = profile.daily.havoc or 0,
+		havocChest = profile.daily.havocChest == true,
 		ranked = {
 			season = profile.ranked.season,
 			points = profile.ranked.points,

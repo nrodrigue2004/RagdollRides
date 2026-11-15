@@ -26,6 +26,8 @@ local Round = require("../src/shared/Round")
 local RaceMath = require("../src/shared/RaceMath")
 local Boards = require("../src/shared/Boards")
 local BrawlMath = require("../src/shared/BrawlMath")
+local HighwayMath = require("../src/shared/HighwayMath")
+local Score = require("../src/shared/Score")
 
 local passed, failed = 0, 0
 local current = ""
@@ -1873,6 +1875,249 @@ test("brawl: ranked points, tiers and seasons", function()
 	end
 end)
 ---------------------------------------------------------------------------
+test("highway: the road bends gently and locate finds s again", function()
+	local cfg = Config.Highway
+	local road = HighwayMath.road(12345, cfg.road)
+	local x0, z0, h0 = HighwayMath.at(road, 0)
+	check(x0 == cfg.road.origin[1] and z0 == cfg.road.origin[3], "s = 0 is the origin")
+	local maxHeading, maxTurn = 0, 0
+	local lastH = h0
+	for s = 0, 20000, cfg.road.segment do
+		local _, _, h = HighwayMath.at(road, s)
+		maxHeading = math.max(maxHeading, math.abs(h))
+		maxTurn = math.max(maxTurn, math.abs(h - lastH))
+		lastH = h
+	end
+	check(maxHeading <= 0.141, "heading stays within 8 degrees")
+	-- One road part per segment, each a stud longer: the outer edge gap stays under the overlap
+	check(
+		maxTurn * road.halfWidth < 0.6,
+		string.format("segments meet with a 1-stud overlap (turn %.4f rad)", maxTurn)
+	)
+	-- Travel along the road is close to s (the bends are gentle)
+	local xa, za = HighwayMath.at(road, 0)
+	local xb, zb = HighwayMath.at(road, 10000)
+	local straight = math.sqrt((xb - xa) ^ 2 + (zb - za) ^ 2)
+	check(straight > 9800 and straight <= 10000.01, "10,000 studs of road cover nearly 10,000 studs")
+	check(zb < za, "the road runs toward -Z")
+	for _, probe in { { 0, 0 }, { 1234.5, 10 }, { 9876, -20 }, { -300, 5 }, { 30000, 26 } } do
+		local px, pz = HighwayMath.place(road, probe[1], probe[2])
+		local s, lateral = HighwayMath.locate(road, px, pz)
+		near(s, probe[1], 0.3, "locate s " .. probe[1])
+		near(lateral, probe[2], 0.3, "locate lateral " .. probe[1])
+	end
+	-- Lanes: lane 1 on the right (positive lateral), lane 4 on the left
+	check(HighwayMath.laneOffset(road, 1) == 21 and HighwayMath.laneOffset(road, 4) == -21, "lane offsets")
+	check(HighwayMath.laneAt(road, 20) == 1 and HighwayMath.laneAt(road, -3) == 3, "lane at a lateral")
+	-- The same seed gives the same road; another seed bends differently
+	local again = HighwayMath.road(12345, cfg.road)
+	local other = HighwayMath.road(999, cfg.road)
+	local ax = HighwayMath.at(again, 5000)
+	local bx = HighwayMath.at(road, 5000)
+	local cx = HighwayMath.at(other, 5000)
+	check(ax == bx and ax ~= cx, "seeded")
+	local tut = HighwayMath.road(12345, cfg.road, { origin = cfg.tutorial.origin, lanes = 2 })
+	check(tut.lanes == 2 and HighwayMath.at(tut, 0) == cfg.tutorial.origin[1], "tutorial road")
+end)
+
+test("highway: traffic is the same everywhere, spaced and typed by the seed", function()
+	local cfg = Config.Highway
+	local road = HighwayMath.road(777, cfg.road)
+	local t = 1234.5
+	local cars = HighwayMath.carsBetween(road, 2000, 6000, t, cfg.traffic)
+	check(#cars > 60, "plenty of traffic (" .. #cars .. ")")
+	local byLane: { [number]: { number } } = {}
+	local kinds: { [string]: number } = {}
+	for _, car in cars do
+		check(car.s >= 2000 and car.s <= 6000, "in range")
+		check(car.speed == cfg.traffic.laneSpeeds[car.lane], "lane speed")
+		byLane[car.lane] = byLane[car.lane] or {}
+		table.insert(byLane[car.lane], car.s)
+		kinds[car.kind.id] = (kinds[car.kind.id] or 0) + 1
+		-- Rebuilt from its id alone (what the server does)
+		local again = HighwayMath.car(road, car.id, t, cfg.traffic)
+		check(again ~= nil and again.s == car.s and again.kind.id == car.kind.id, "rebuilt from the id")
+		local lane, index = HighwayMath.slotOf(car.id)
+		check(lane == car.lane and index == car.index, "slot id round trip")
+	end
+	for lane, list in byLane do
+		table.sort(list)
+		for i = 2, #list do
+			check(list[i] - list[i - 1] >= 59.99, "lane " .. lane .. " cars at least 60 apart")
+		end
+	end
+	check((kinds.compact or 0) > (kinds.foamTanker or 0), "compacts outnumber tankers")
+	-- Time moves every car along its lane at its lane's speed
+	local car = cars[1]
+	local later = HighwayMath.car(road, car.id, t + 2, cfg.traffic) :: any
+	near(later.s - car.s, 2 * car.speed, 1e-6, "cars move at lane speed")
+	-- Negative slot indexes work (a long-running server)
+	local farId = HighwayMath.slotId(3, -123456)
+	local lane, index = HighwayMath.slotOf(farId)
+	check(lane == 3 and index == -123456, "negative index round trip")
+	-- Rush Hour halves the spacing; quiet (the tutorial) thins it
+	local rush = HighwayMath.carsBetween(road, 2000, 6000, t, cfg.traffic, { event = cfg.events[2] })
+	local quiet = HighwayMath.carsBetween(road, 2000, 6000, t, cfg.traffic, { quiet = 3 })
+	check(#rush > #cars * 1.6 and #quiet < #cars * 0.5, "rush hour and quiet roads")
+	local parade = HighwayMath.carsBetween(road, 0, 20000, t, cfg.traffic, { event = cfg.events[4] })
+	local buses, normalBuses = 0, 0
+	for _, c in parade do
+		if c.kind.id == "partyBus" then
+			buses += 1
+		end
+	end
+	for _, c in HighwayMath.carsBetween(road, 0, 20000, t, cfg.traffic) do
+		if c.kind.id == "partyBus" then
+			normalBuses += 1
+		end
+	end
+	check(buses > normalBuses * 2, "bus parade")
+end)
+
+test("highway: ramps, wrenches, props and events", function()
+	local cfg = Config.Highway
+	local road = HighwayMath.road(4321, cfg.road)
+	local ramps = HighwayMath.rampsBetween(road, 0, 20000, cfg.ramps)
+	for i = 2, #ramps do
+		local gap = ramps[i].s - ramps[i - 1].s
+		check(gap >= 350 and gap <= 500, "ramps 350 to 500 apart")
+	end
+	for _, r in ramps do
+		check(r.lane >= 1 and r.lane + cfg.ramps.lanes - 1 <= road.lanes, "ramp lanes on the road")
+	end
+	local rampDay = HighwayMath.rampsBetween(road, 0, 2000, cfg.ramps, cfg.events[5])
+	check(#rampDay == 10 and rampDay[1].s == 200, "ramp day: every 200")
+	local wrenches = HighwayMath.wrenchesBetween(road, 0, 9000, cfg.wrench.every)
+	check(#wrenches == 10 and wrenches[1].s == 450 and wrenches[2].s == 1350, "a wrench every 900")
+	local props = HighwayMath.propsBetween(road, 0, 4000, cfg.props)
+	check(#props > 60, "props line the road")
+	for _, p in props do
+		local again = HighwayMath.prop(road, p.id, cfg.props)
+		check(again ~= nil and again.s == p.s and again.kind.id == p.kind.id, "prop rebuilt from id")
+		check(math.abs(p.lateral) >= road.halfWidth - 2, "props off the lanes")
+	end
+	-- Events by UTC weekday: day 0 (1970-01-01) was a Thursday (Ramp Day)
+	check(HighwayMath.eventFor(0, cfg.events).id == "rampDay", "Thursday")
+	check(HighwayMath.eventFor(1, cfg.events).id == "pileupFriday", "Friday")
+	check(HighwayMath.eventFor(3, cfg.events).id == "lowGravity", "Sunday")
+	-- Run starts: behind the pack, or back at the start
+	check(HighwayMath.startS({}, 120, 40000) == 0, "empty road starts at 0")
+	check(HighwayMath.startS({ 3000, 1500 }, 120, 40000) == 1380, "behind the last car")
+	check(HighwayMath.startS({ 50000 }, 120, 40000) == 0, "too far out starts over")
+end)
+
+test("highway: destruction score, combos, chains and pile-ups", function()
+	local cfg = Config.Highway.score
+	check(
+		Score.speedFactor(10, cfg) == 0.5
+			and Score.speedFactor(80, cfg) == 2
+			and Score.speedFactor(500, cfg) == 2.5,
+		"speed factor"
+	)
+	local steps = cfg.comboSteps
+	check(
+		Score.multiplier(1, steps) == 1
+			and Score.multiplier(2, steps) == 2
+			and Score.multiplier(4, steps) == 3,
+		"x1 x2 x3"
+	)
+	check(
+		Score.multiplier(29, steps) == 7
+			and Score.multiplier(30, steps) == 8
+			and Score.multiplier(99, steps) == 8,
+		"x8 at 30"
+	)
+	local run = Score.newRun()
+	-- First hit: a sedan at I 40 = 75 x 1 x 1 x 1
+	check(Score.hit(run, 0, 75, 40, 0, cfg) == 75, "first hit")
+	-- Second within 3 s: x2
+	check(Score.hit(run, 1, 75, 40, 0, cfg) == 150, "second hit x2")
+	check(run.bestMultiplier == 2, "best multiplier")
+	-- A near miss keeps it alive past 3 s from the last hit
+	check(Score.nearMiss(run, 3.5, cfg) == 25, "near miss 25")
+	check(Score.hit(run, 6, 75, 40, 0, cfg) == 150, "combo kept alive by the near miss (3 hits: x2)")
+	-- A chain hit pays 50% at the current combo and does not step it
+	check(Score.hit(run, 6.5, 100, 40, 1, cfg) == 100, "chain link 1: 100 x 2 x 0.5")
+	check(Score.hit(run, 6.5, 100, 40, 4, cfg) == 0, "no credit past link 3")
+	check(run.combo == 3, "chains do not step the combo")
+	-- A 3 s gap resets
+	check(Score.hit(run, 10, 50, 40, 0, cfg) == 50, "reset to x1")
+	-- Bone breaks: Crack bonus x combo, then the break multiplier
+	local crack = Score.boneBreak(run, 10.5, cfg)
+	check(crack == 150, "crack at x1")
+	near(Score.hitValue(100, 40, 1, run.breaks, cfg), 110, 1e-9, "break multiplier 1.1")
+	near(Score.breakMultiplier(12, cfg), 2.2, 1e-9, "2.2 at 12 breaks")
+	-- Caps: 3,000 per event and 2,000 per second
+	local capped = Score.newRun()
+	check(Score.cap(capped, 0, 5000, cfg) == 2000, "per second first")
+	check(Score.cap(capped, 0.5, 500, cfg) == 0, "nothing more in that second")
+	check(Score.cap(capped, 1.1, 3500, cfg) == 2000, "per event 3,000 then the second's 2,000")
+	-- Pile-up: 5 wrecks inside 4 s, paid once the window runs out
+	local pile = Score.newRun()
+	for i = 1, 4 do
+		check(Score.wreck(pile, i * 0.5, cfg) == false, "not yet")
+	end
+	check(Score.wreck(pile, 2.5, cfg) == true, "5th wreck starts the pile-up")
+	Score.wreck(pile, 3, cfg)
+	Score.wreck(pile, 4, cfg)
+	check(Score.pileupDue(pile, 7, 1, cfg) == nil, "still building")
+	local points, cars = Score.pileupDue(pile, 8.1, 1, cfg)
+	check(cars == 7 and points == 1500, "1,000 + 250 per car past 5")
+	check(pile.pileups == 1 and Score.pileupDue(pile, 20, 1, cfg) == nil, "paid once")
+	local friday = Score.newRun()
+	for i = 1, 5 do
+		Score.wreck(friday, i * 0.1, cfg)
+	end
+	check(Score.pileupDue(friday, 5, 2, cfg) == 2000, "Pile-up Friday doubles")
+	local spread = Score.newRun()
+	for i = 1, 6 do
+		Score.wreck(spread, i * 3, cfg)
+	end
+	check(spread.pileCount == 0, "wrecks far apart are no pile-up")
+	-- Tricks and coins
+	check(Score.airPoints(1.6, cfg) == 75 and Score.airPoints(60, cfg) == 300, "air points, capped")
+	check(Score.flipPoints(2, cfg) == 600 and Score.flipPoints(9, cfg) == 900, "flips, capped")
+	check(
+		Score.coins(12000, Config.Highway.coins) == 48 and Score.coins(99999, Config.Highway.coins) == 120,
+		"coins"
+	)
+end)
+
+test("highway: bones break in order, by side, with limits", function()
+	local total = 0
+	for _, bones in Score.BONES do
+		total += #bones
+	end
+	check(total == 12 and Config.Highway.bones.total == 12, "12 bones")
+	local broken = {}
+	check(Score.pickPiece(broken, Score.piecesFor("Front")) == 1, "front: head first")
+	check(Score.breakOn(broken, 1) == "Noggin", "noggin")
+	check(Score.pickPiece(broken, Score.piecesFor("Front")) == 2, "front: then torso")
+	check(Score.pickPiece(broken, Score.piecesFor("Roof")) == 2, "roof with no head bones: next piece")
+	check(Score.breakOn(broken, 2) == "Ribs" and Score.breakOn(broken, 2) == "Spine", "torso order")
+	check(Score.pickPiece(broken, Score.piecesFor("Left")) == 3, "left: left arm")
+	for _ = 1, 2 do
+		Score.breakOn(broken, 3)
+	end
+	check(Score.pickPiece(broken, Score.piecesFor("Left")) == 5, "left arm gone: left leg")
+	check(Score.bonesLeft(broken) == 7, "7 left")
+	for piece = 1, 6 do
+		while (broken[piece] or 0) < #Score.BONES[piece] do
+			Score.breakOn(broken, piece)
+		end
+	end
+	check(Score.pickPiece(broken, { 4 }) == nil and Score.bonesLeft(broken) == 0, "all 12 gone")
+	local limits = Config.Highway.bones
+	local clock = Score.newBreakClock()
+	check(Score.mayBreak(clock, 0, limits), "first")
+	Score.noteBreak(clock, 0, limits)
+	check(not Score.mayBreak(clock, 0.3, limits), "0.5 s cooldown")
+	Score.noteBreak(clock, 0.6, limits)
+	Score.noteBreak(clock, 1.2, limits)
+	check(not Score.mayBreak(clock, 1.8, limits), "3 per crash")
+	check(Score.mayBreak(clock, 3, limits), "a new crash")
+end)
+---------------------------------------------------------------------------
 -- Optional: check the built place file has the scripts in the right services
 local placePath = process.args[1]
 if placePath then
@@ -1908,6 +2153,8 @@ if placePath then
 				"RaceMath",
 				"Boards",
 				"BrawlMath",
+				"HighwayMath",
+				"Score",
 				"Place",
 				"Movers",
 				"PieceCatalog",
@@ -1947,6 +2194,7 @@ if placePath then
 				"RaceClient",
 				"HubClient",
 				"BrawlClient",
+				"HighwayClient",
 			}
 		do
 			check(client ~= nil and client:FindFirstChild("Controllers"):FindFirstChild(name) ~= nil, name)
@@ -1963,6 +2211,11 @@ if placePath then
 		check(ui ~= nil and ui:FindFirstChild("HubHud") ~= nil, "Ui.HubHud")
 		check(ui ~= nil and ui:FindFirstChild("RaceHud") ~= nil, "Ui.RaceHud")
 		check(ui ~= nil and ui:FindFirstChild("BrawlHud") ~= nil, "Ui.BrawlHud")
+		check(ui ~= nil and ui:FindFirstChild("HighwayHud") ~= nil, "Ui.HighwayHud")
+		for _, name in { "Road", "Traffic" } do
+			local highway = client and client:FindFirstChild("Highway")
+			check(highway ~= nil and highway:FindFirstChild(name) ~= nil, "Highway." .. name)
+		end
 		local services = server and server:FindFirstChild("Services")
 		for _, name in
 			{
@@ -1987,6 +2240,8 @@ if placePath then
 				"BrawlService",
 				"BrawlArena",
 				"BrawlBots",
+				"BoardStore",
+				"HighwayService",
 				"LiveCounts",
 				"TestTrack",
 				"TracksService",
@@ -2009,6 +2264,7 @@ if placePath then
 			local attributes = project.tree.Workspace["$attributes"] or {}
 			check(attributes.PlaceRole == "Brawl", file .. " PlaceRole")
 			check((attributes.Ranked == true) == ranked, file .. " Ranked")
+			check(attributes.Versus == nil, file .. " no Versus")
 			for key in base.tree do
 				check(project.tree[key] ~= nil, file .. " has " .. key)
 			end
@@ -2017,6 +2273,28 @@ if placePath then
 					== serde.encode("json", base.tree.ServerScriptService),
 				file .. " same server tree"
 			)
+		end
+	end)
+	-- The Sunny Pass place files: the same tree plus the Highway role (and Versus for the versus one)
+	test("Highway place files", function()
+		local fs = require("@lune/fs")
+		local serde = require("@lune/serde")
+		local base = serde.decode("json", fs.readFile("default.project.json"))
+		for file, versus in { ["highway.project.json"] = false, ["versus.project.json"] = true } do
+			local project = serde.decode("json", fs.readFile(file))
+			local attributes = project.tree.Workspace["$attributes"] or {}
+			check(attributes.PlaceRole == "Highway", file .. " PlaceRole")
+			check((attributes.Versus == true) == versus, file .. " Versus")
+			check(attributes.Ranked == nil, file .. " no Ranked")
+			for key in base.tree do
+				check(project.tree[key] ~= nil, file .. " has " .. key)
+			end
+			for _, key in { "ServerScriptService", "ReplicatedStorage", "StarterPlayer" } do
+				check(
+					serde.encode("json", project.tree[key]) == serde.encode("json", base.tree[key]),
+					file .. " same " .. key
+				)
+			end
 		end
 	end)
 end

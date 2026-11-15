@@ -5,8 +5,9 @@
 -- * A party leader sends every party member in this server; a member alone sends only themselves.
 -- * TeleportAsync puts the group in one server of that place. Teleport data carries the party and the
 --   mode chip (Casual / Ranked, Co-op / Versus) so the mode server can keep the party together.
--- * Ranked (Brawl) opens after Config.Brawl.ranked.unlockRounds casual rounds; the hub checks it here
---   and the ranked place checks it again on arrival.
+-- * Ranked (Brawl) opens after Config.Brawl.ranked.unlockRounds casual rounds, Versus (Highway) after
+--   Config.Highway.versusUnlockRuns co-op runs; the hub checks it here and the mode place checks it
+--   again on arrival.
 -- * home(player): from a mode place back to Tumble Park (Config.Places.start, or the place the player
 --   came from), with their party if they lead one.
 -- * A failed hop (TeleportInitFailed) retries up to Config.Places.teleportRetries times, then tells
@@ -66,6 +67,11 @@ function TeleportHub.rankedOpen(player: Player): boolean
 	return profile ~= nil and (profile.stats.brawlRounds or 0) >= Config.Brawl.ranked.unlockRounds
 end
 
+function TeleportHub.versusOpen(player: Player): boolean
+	local profile = DataService.get(player)
+	return profile ~= nil and (profile.stats.highwayRuns or 0) >= Config.Highway.versusUnlockRuns
+end
+
 -- Send a player (and their party, if they lead it) to a mode. Returns false with a reason key.
 function TeleportHub.send(player: Player, modeName: string, chip: string): (boolean, string?)
 	local placeId = TeleportHub.placeFor(modeName, chip)
@@ -74,6 +80,9 @@ function TeleportHub.send(player: Player, modeName: string, chip: string): (bool
 	end
 	if modeName == "brawl" and chip == "ranked" and not TeleportHub.rankedOpen(player) then
 		return false, "rankedLocked"
+	end
+	if modeName == "highway" and chip == "versus" and not TeleportHub.versusOpen(player) then
+		return false, "versusLocked"
 	end
 	return hop(player, placeId, { mode = modeName, chip = chip })
 end

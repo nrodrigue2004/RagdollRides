@@ -78,6 +78,8 @@ local state: any = nil -- the current vehicle's state, or nil
 local settings = { steerAssist = "High" } -- ProfileClient applies the saved setting (and maps can force High)
 local killY = Config.World.killY -- TracksClient sets each map's own (a little under its lowest road)
 local ZERO_INPUT = { throttle = 0, brake = 0, steer = 0, lean = 0, handbrake = false, analogSteer = false }
+-- While the rider is thrown: nil (the car coasts) or a driver (Highway: the car keeps its lane)
+local autopilot: ((number) -> any)? = nil
 -- Damage effects on handling (DamageController sets these from the zone numbers; spec: Damage zones)
 local CLEAN_HANDLING = {
 	topSpeed = 1,
@@ -390,7 +392,9 @@ local function step(dt: number)
 		return
 	end
 
-	local input = if s.driverPresent then controllers.Input.read(dt) else ZERO_INPUT
+	local input = if s.driverPresent
+		then controllers.Input.read(dt)
+		else (autopilot and autopilot(dt) or ZERO_INPUT)
 	s.input = input
 
 	local cf = chassis.CFrame
@@ -961,6 +965,8 @@ function VehicleController.reset()
 end
 
 -- Called by the ragdoll when the rider respawns: car back to the checkpoint, rider back in the seat.
+-- With remount in place (Highway: the car kept driving on autopilot) the rider just climbs back in.
+local remountInPlace = false
 function VehicleController.respawnDriver()
 	local s = state
 	if not s then
@@ -970,10 +976,26 @@ function VehicleController.respawnDriver()
 	controllers.Input.consume("jump")
 	controllers.Input.consume("reset")
 	controllers.Input.consume("flip")
+	if remountInPlace then
+		return
+	end
 	if s.sequence then
 		s.sequence = nil
 	end
 	beginSequence(s, "reset", respawnCFrame(s), Config.Driving.resetDuration)
+end
+
+function VehicleController.setRemountInPlace(value: boolean)
+	remountInPlace = value
+end
+
+-- Who drives while the rider is thrown (nil: nobody, the car coasts)
+function VehicleController.setAutopilot(fn: ((number) -> any)?)
+	autopilot = fn
+end
+
+function VehicleController.isDriverPresent(): boolean
+	return state ~= nil and state.driverPresent
 end
 
 -- Dev tests: put the car somewhere at a given velocity, now.

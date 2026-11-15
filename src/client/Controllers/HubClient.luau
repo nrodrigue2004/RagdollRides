@@ -184,7 +184,12 @@ function HubClient.openModes()
 			glow = lastMode == "highway",
 			chips = {
 				{ id = "coop", label = "CO-OP" },
-				{ id = "versus", label = "VERSUS", locked = true },
+				-- Versus opens after 2 co-op runs (spec)
+				{
+					id = "versus",
+					label = "VERSUS",
+					locked = (view.highwayRuns or 0) < Config.Highway.versusUnlockRuns,
+				},
 			},
 			chip = chips.highway,
 			onChip = chip("highway"),

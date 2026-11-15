@@ -2,7 +2,8 @@
 -- * Tumble Park, the start place: Tracks, the map builder, browsing and moderating player maps, the
 --   hub, quick races, parties and map leaderboards.
 -- * Cinder Cove (Bumper Brawl, casual and ranked): the Brawl rounds.
--- Both have saves, the shop and garage, Robux purchases, quests and streak, parties and teleports.
+-- * Sunny Pass (Highway Havoc, co-op and versus): the Highway runs and their boards.
+-- All have saves, the shop and garage, Robux purchases, quests and streak, parties and teleports.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -13,12 +14,14 @@ local Place = require(Shared.Place)
 
 local Services = script:WaitForChild("Services")
 local BoardService = require(Services.BoardService)
+local BoardStore = require(Services.BoardStore)
 local BrawlService = require(Services.BrawlService)
 local BrowseService = require(Services.BrowseService)
 local BuilderService = require(Services.BuilderService)
 local CollisionGroups = require(Services.CollisionGroups)
 local DataService = require(Services.DataService)
 local EconomyService = require(Services.EconomyService)
+local HighwayService = require(Services.HighwayService)
 local HubService = require(Services.HubService)
 local MapPlayService = require(Services.MapPlayService)
 local MapService = require(Services.MapService)
@@ -41,7 +44,8 @@ Net.initServer()
 DataService.init()
 EconomyService.init()
 
-if Place.role() == "Brawl" then
+local role = Place.role()
+if role == "Brawl" then
 	workspace:SetAttribute("PlaceRole", "Brawl")
 	ShopService.init() -- coin shop, garage, mastery, rebirth
 	PurchaseService.init() -- Robux passes and products, one receipt handler
@@ -49,6 +53,16 @@ if Place.role() == "Brawl" then
 	TeleportHub.init() -- back to Tumble Park
 	QuestService.init() -- quests, chest, login streak, gifts
 	BrawlService.init() -- the pen, arenas, rounds, bots and practice (sets workspace Mode "Brawl")
+	VehicleService.init()
+elseif role == "Highway" then
+	workspace:SetAttribute("PlaceRole", "Highway")
+	ShopService.init()
+	PurchaseService.init()
+	PartyService.init()
+	TeleportHub.init()
+	QuestService.init()
+	BoardStore.init() -- the Highway boards
+	HighwayService.init() -- the seeded road, runs, hit checks, score and pay (sets workspace Mode "Highway")
 	VehicleService.init()
 else
 	TestTrack.build() -- kept for the dev panel's feel and crash tests (Studio and admins: Map.Go "test_track")
@@ -64,9 +78,10 @@ else
 	RaceService.init() -- quick races on the round state machine
 	HubService.init() -- the Tumble Park plaza and live player counts
 	TeleportHub.init() -- hops to mode places
+	BoardStore.init()
 	BoardService.init() -- map leaderboards
 	QuestService.init() -- quests, chest, login streak, gifts
 	VehicleService.init()
 end
 
-print(string.format("[RagdollRides] %s server ready (%s)", Place.role(), Config.Version))
+print(string.format("[RagdollRides] %s server ready (%s)", role, Config.Version))

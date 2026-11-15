@@ -302,6 +302,13 @@ local function onImpact(info)
 	end
 end
 
+-- Play the last crash now (Highway's Full Crack finale); only when the rider is thrown, as always
+function CrashReplay.playNow()
+	if not playing and not reducedMotion() then
+		task.spawn(play)
+	end
+end
+
 function CrashReplay.isPlaying(): boolean
 	return playing
 end

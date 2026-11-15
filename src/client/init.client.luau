@@ -1,7 +1,7 @@
 -- Client entry point. Players have no avatar character in Ragdoll Rides: they are always in a vehicle,
 -- with their rider in the seat. Controllers are created in order, given each other, then started.
 -- Some only run in one place (Shared/Place): the map builder, browsing, quick races and the hub in
--- Tumble Park; Bumper Brawl in Cinder Cove.
+-- Tumble Park; Bumper Brawl in Cinder Cove; Highway Havoc in Sunny Pass.
 
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
@@ -52,6 +52,7 @@ local ORDER = {
 	{ "Race", "RaceClient", "Hub" },
 	{ "Hub", "HubClient", "Hub" },
 	{ "Brawl", "BrawlClient", "Brawl" },
+	{ "Highway", "HighwayClient", "Highway" },
 	{ "Dev", "DevPanel" },
 }
 local active = {}

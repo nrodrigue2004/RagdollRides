@@ -4,7 +4,7 @@
 -- Tabs: Featured (hand-picked by admins), Popular (MapStats.popularScore), Newest, Friends (maps by
 -- your Roblox friends), My Maps (yours, hidden ones marked "Hidden for review") and Review (admins:
 -- maps hidden by reports). The starter maps tab is built on the client (it needs no server).
--- Sponsored slots arrive with milestone 5's shop.
+-- Sponsored slots are deferred to Update 2 (nate's decision, 2026-11-13).
 
 local Players = game:GetService("Players")
 

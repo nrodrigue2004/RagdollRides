@@ -6,7 +6,7 @@
 --   tracks = { [mapId] = { best = ms, stars = 0..3, splits = { ms per checkpoint } } }  per-map results
 --   ghosts = { [mapId] = base64 ghost }, ghostOrder = { mapIds, newest last }          best-run ghosts
 --   flags.boardBanDay = yyyymmdd: 3 rejected runs in 10 minutes = no leaderboard posts that day
---   trackOrder = { mapIds } player maps with a tracks entry, newest last (kept to the newest 300)
+--   trackOrder = { mapIds } player maps with a tracks entry, newest last (kept to the newest 500)
 --   ratings = { [mapId] = 1..5 } (spec field), trimmed with trackOrder
 --   daily.mapStarts = { [mapId] = n } runs started today (a play counts once per player per map per day)
 --   maps.drafts = { [tostring(slot)] = base64 map buffer } (string keys: DataStores need one key type)

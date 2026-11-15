@@ -1,8 +1,9 @@
 -- InputController: one input snapshot per physics step from keyboard, gamepad, touch buttons, or a
 -- scripted override (the dev panel's feel tests).
 -- Keyboard: W/S or Up/Down gas and brake, A/D or Left/Right steer, Space jump, Q lean back, E lean
--- forward, Left Shift handbrake, R reset (or respawn while ragdolled), F flip.
--- Gamepad: RT gas, LT brake, left stick steer and lean, A jump, B handbrake, X reset/respawn, Y flip.
+-- forward, Left Shift handbrake, R reset (or respawn while ragdolled), F flip, G action (a Brawl powerup).
+-- Gamepad: RT gas, LT brake, left stick steer and lean, A jump, B handbrake, X reset/respawn, Y flip,
+-- RB action.
 -- Digital steering ramps 0 to full in 0.12 s; analog sticks are instant (spec: Steering).
 
 local UserInputService = game:GetService("UserInputService")
@@ -59,7 +60,8 @@ local function press(action: string)
 	pressed[action] = true
 end
 
--- Edge-triggered actions: "jump", "reset", "flip", "respawn", "flail". Returns true once per press.
+-- Edge-triggered actions: "jump", "reset", "flip", "respawn", "flail", "action". Returns true once per
+-- press.
 function InputController.consume(action: string): boolean
 	if pressed[action] then
 		pressed[action] = false
@@ -172,6 +174,8 @@ function InputController.init()
 				press("respawn")
 			elseif input.KeyCode == Enum.KeyCode.F then
 				press("flip")
+			elseif input.KeyCode == Enum.KeyCode.G then
+				press("action")
 			end
 		elseif input.UserInputType.Name:sub(1, 7) == "Gamepad" then
 			lastDevice = "gamepad"
@@ -183,6 +187,8 @@ function InputController.init()
 				press("respawn")
 			elseif input.KeyCode == Enum.KeyCode.ButtonY then
 				press("flip")
+			elseif input.KeyCode == Enum.KeyCode.ButtonR1 then
+				press("action")
 			elseif input.KeyCode == Enum.KeyCode.ButtonB then
 				pad.handbrake = true
 			end

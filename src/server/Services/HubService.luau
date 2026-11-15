@@ -4,14 +4,12 @@
 --   shop stall and builder workshop), a couple of kicker ramps and the Tumble Tower landmark. Driving
 --   into a stall opens its screen on the client (HubClient); the server only builds and counts.
 -- * Returning players spawn here (TracksService: map id "hub"); first-time players start on Pip's Hill.
--- * Live player counts: every server writes its counts to a MemoryStore sorted map every 30 s (expires
---   after 90 s) and sums every server's; the totals go on workspace attributes LiveTracks, LiveRace,
---   LiveBrawl and LiveHighway for the mode cards. Brawl and Highway places write theirs the same way.
+-- * Live player counts for the mode cards (LiveCounts): this server's Tracks and quick race players;
+--   Brawl and Highway places write theirs the same way.
 -- * Hub.Mode(mode, chip): a mode card's PLAY for Bumper Brawl or Highway Havoc (TeleportHub). Until
 --   those places exist it answers "modeSoon".
 -- PLACEHOLDER ART: the plaza, stalls, signs, ramps and tower are plain foam-coloured parts.
 
-local MemoryStoreService = game:GetService("MemoryStoreService")
 local Players = game:GetService("Players")
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
@@ -19,6 +17,7 @@ local Config = require(Shared.Config)
 local Net = require(Shared.Net)
 
 local Services = script.Parent
+local LiveCounts = require(Services.LiveCounts)
 local TeleportHub = require(Services.TeleportHub)
 local TracksService = require(Services.TracksService)
 
@@ -133,44 +132,9 @@ local function build()
 	folder.Parent = workspace
 end
 
----------------------------------------------------------------------------
--- Live player counts across every server
----------------------------------------------------------------------------
-
 local function localCounts(): { [string]: number }
 	local race = if HubService.raceCount then HubService.raceCount() else 0
 	return { tracks = math.max(0, #Players:GetPlayers() - race), race = race }
-end
-
-local function publishCounts()
-	local key = if game.JobId ~= "" then game.JobId else "studio"
-	local totals = localCounts()
-	local ok = pcall(function()
-		local map = MemoryStoreService:GetSortedMap(cfg.countsStore)
-		map:SetAsync(key, localCounts(), cfg.countsExpiry)
-		local sum = { tracks = 0, race = 0, brawl = 0, highway = 0 }
-		local exclusive: string? = nil
-		repeat
-			local items = map:GetRangeAsync(Enum.SortDirection.Ascending, 200, exclusive)
-			for _, item in items do
-				if type(item.value) == "table" then
-					for name in sum do
-						sum[name] += tonumber(item.value[name]) or 0
-					end
-				end
-			end
-			exclusive = if #items == 200 then items[#items].key else nil
-		until exclusive == nil
-		totals = sum
-	end)
-	if not ok then
-		-- No MemoryStore (Studio without API access): this server's own counts
-		totals = localCounts()
-	end
-	workspace:SetAttribute("LiveTracks", totals.tracks or 0)
-	workspace:SetAttribute("LiveRace", totals.race or 0)
-	workspace:SetAttribute("LiveBrawl", totals.brawl or 0)
-	workspace:SetAttribute("LiveHighway", totals.highway or 0)
 end
 
 function HubService.init()
@@ -184,20 +148,10 @@ function HubService.init()
 			Net.fire("Notice", player, reason)
 		end
 	end)
-	task.spawn(function()
-		while true do
-			publishCounts()
-			task.wait(cfg.countsInterval)
-		end
-	end)
+	LiveCounts.start(localCounts)
 	Players.PlayerAdded:Connect(function()
-		task.defer(function()
-			-- New arrivals see this server's numbers at once; the next write adds everyone else's
-			local mine = localCounts()
-			if (workspace:GetAttribute("LiveTracks") or 0) < mine.tracks then
-				workspace:SetAttribute("LiveTracks", mine.tracks)
-			end
-		end)
+		-- New arrivals see this server's numbers at once; the next write adds everyone else's
+		task.defer(LiveCounts.bump)
 	end)
 end
 

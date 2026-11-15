@@ -8,7 +8,8 @@
 --   coins     the coin price, or nil if it is not sold for coins
 --   rarity    crate odds and the duplicate refund (common, rare, epic, legendary)
 --   source    "shop" (coins, can be in the daily rotation), "crate" (crate only), "pass" (a game pass),
---             "starter" (the Starter Pack), "mastery" (a vehicle's mastery level), "streak" (day 7)
+--             "starter" (the Starter Pack), "mastery" (a vehicle's mastery level), "streak" (day 7),
+--             "ranked" (a Bumper Brawl ranked season reward, one per tier reached)
 --   color     { r, g, b } and material for paints and rims, the main colour for the rest
 -- PLACEHOLDER ART: every item is a colour, material or simple part until the art pass gives them meshes
 -- and textures; horns have no sound until nate picks licensed sounds (Config.Sounds).
@@ -732,6 +733,57 @@ local items: { Item } = {
 		rarity = "rare",
 		source = "streak",
 		color = { 140, 100, 60 },
+	},
+	-- Ranked season rewards (Bumper Brawl): one per tier reached, paid when a season ends
+	{
+		id = "decal_bronze_bolt",
+		kind = "decal",
+		name = "Bronze Bolt Badge",
+		rarity = "rare",
+		source = "ranked",
+		color = { 205, 127, 50 },
+	},
+	{
+		id = "trail_silver_spark",
+		kind = "trail",
+		name = "Silver Spark Trail",
+		rarity = "rare",
+		source = "ranked",
+		color = { 210, 215, 230 },
+	},
+	{
+		id = "rims_gold_gear",
+		kind = "rims",
+		name = "Gold Gear Rims",
+		rarity = "epic",
+		source = "ranked",
+		color = { 255, 200, 40 },
+		material = "Metal",
+	},
+	{
+		id = "paint_platinum_piston",
+		kind = "paint",
+		name = "Platinum Piston",
+		rarity = "epic",
+		source = "ranked",
+		color = { 225, 235, 245 },
+		material = "Metal",
+	},
+	{
+		id = "trail_diamond_drift",
+		kind = "trail",
+		name = "Diamond Drift Trail",
+		rarity = "legendary",
+		source = "ranked",
+		color = { 150, 230, 255 },
+	},
+	{
+		id = "hat_apex_crown",
+		kind = "hat",
+		name = "Apex Crown",
+		rarity = "legendary",
+		source = "ranked",
+		color = { 255, 215, 60 },
 	},
 	-- A crate key opens one coin crate (login streak day 4)
 	{ id = "crate_key", kind = "key", name = "Crate Key", rarity = "common", source = "streak" },

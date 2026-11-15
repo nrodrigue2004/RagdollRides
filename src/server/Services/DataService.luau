@@ -24,6 +24,8 @@ local DataService = {}
 
 DataService.Loaded = Signal.new() -- (player, profile)
 DataService.Reset = Signal.new() -- (player, profile): a dev reset made it a first-time profile
+-- (player, profile): the player is leaving; handlers run before the last save (a ranked quit penalty)
+DataService.Leaving = Signal.new()
 
 type Session = {
 	profile: { [string]: any },
@@ -306,6 +308,10 @@ end
 
 local function onPlayerRemoving(player: Player)
 	if sessions[player] then
+		local ok, err = pcall(DataService.Leaving.Fire, DataService.Leaving, player, sessions[player].profile)
+		if not ok then
+			warn("[Data] leaving handler: " .. tostring(err))
+		end
 		DataService.save(player, true)
 		sessions[player] = nil
 	end

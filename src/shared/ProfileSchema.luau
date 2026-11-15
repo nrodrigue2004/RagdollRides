@@ -362,6 +362,15 @@ function ProfileSchema.clientView(profile: { [string]: any }, now: number?): { [
 		lastMode = profile.flags.lastMode or "",
 		playSeconds = profile.stats.playSeconds or 0,
 		races = profile.stats.races or 0,
+		brawlRounds = profile.stats.brawlRounds or 0,
+		brawlWins = profile.stats.brawlWins or 0,
+		kos = profile.stats.kos or 0,
+		ranked = {
+			season = profile.ranked.season,
+			points = profile.ranked.points,
+			placementsLeft = profile.ranked.placementsLeft,
+			bestTier = profile.ranked.bestTier,
+		},
 	}
 end
 

@@ -133,6 +133,14 @@ local SHAPES: { [string]: (Vector3) -> { { size: Vector3, offset: CFrame } } } =
 			{ size = Vector3.new(0.7, 0.06, 0.7), offset = CFrame.new(0, c.Y * 0.5 + 0.55, -c.Z * 0.3) },
 		}
 	end,
+	-- Ranked season reward: a bolt badge on the bonnet and both doors
+	decal_bronze_bolt = function(c)
+		return {
+			{ size = Vector3.new(0.6, 0.06, 1.1), offset = CFrame.new(0, c.Y * 0.5 + 0.55, -c.Z * 0.3) },
+			{ size = Vector3.new(0.06, 0.9, 0.5), offset = CFrame.new(-c.X * 0.5 - 0.05, 0.4, 0) },
+			{ size = Vector3.new(0.06, 0.9, 0.5), offset = CFrame.new(c.X * 0.5 + 0.05, 0.4, 0) },
+		}
+	end,
 	mastery_badge = function(c)
 		return {
 			{ size = Vector3.new(0.8, 0.06, 0.8), offset = CFrame.new(0, c.Y * 0.5 + 0.55, -c.Z * 0.3) },
@@ -226,7 +234,7 @@ function Looks.rider(parts: { [string]: BasePart }, outfitId: string?, hatId: st
 		hat.Shape = Enum.PartType.Cylinder
 		hat.Size = Vector3.new(1.4 * s, 0.9 * s, 0.9 * s)
 		hat.CFrame = head.CFrame * CFrame.new(0, top + 0.5 * s, 0) * CFrame.Angles(0, 0, math.rad(90))
-	elseif hatId == "hat_crown" or hatId == "hat_chef" then
+	elseif hatId == "hat_crown" or hatId == "hat_chef" or hatId == "hat_apex_crown" then
 		hat.Shape = Enum.PartType.Cylinder
 		hat.Size = Vector3.new(0.8 * s, 1.1 * s, 1.1 * s)
 		hat.CFrame = head.CFrame * CFrame.new(0, top + 0.25 * s, 0) * CFrame.Angles(0, 0, math.rad(90))

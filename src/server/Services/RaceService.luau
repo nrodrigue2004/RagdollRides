@@ -21,8 +21,10 @@ local Config = require(Shared.Config)
 local MapBuilder = require(Shared.MapBuilder)
 local Net = require(Shared.Net)
 local RaceMath = require(Shared.RaceMath)
+local ShopMath = require(Shared.ShopMath)
 local Signal = require(Shared.Util.Signal)
 local StarterMaps = require(Shared.StarterMaps)
+local TracksMath = require(Shared.TracksMath)
 
 local Services = script.Parent
 local DataService = require(Services.DataService)
@@ -219,11 +221,19 @@ function mode.finish(round)
 			dnf = placing.dnf,
 		})
 		if player then
-			local want = RaceMath.coins(placing, cfg)
-			local got = EconomyService.grantCoins(player, want, "tracks", "Race_" .. placing.place)
-			paid[placing.userId] = got
-			capped[placing.userId] = got < want
+			-- Inside the Tracks daily cap, with the friend and rebirth boosts (spec: Coin faucets and caps)
 			local profile = DataService.get(player)
+			local want = RaceMath.coins(placing, cfg)
+			local boost = EconomyService.boostFor(player)
+			local coins = want
+			if profile then
+				local cap =
+					math.floor(Config.Tracks.dailyCap * ShopMath.capMultiplier(profile.rebirths) + 0.5)
+				coins = TracksMath.applyCap(want, boost, profile.daily.coinsByMode.tracks or 0, cap)
+			end
+			local got = EconomyService.grantCoins(player, coins, "tracks", "Race_" .. placing.place)
+			paid[placing.userId] = got
+			capped[placing.userId] = got < math.floor(want * (1 + boost) + 0.5)
 			if profile then
 				profile.stats.races += 1
 				DataService.changed(player)

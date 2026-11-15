@@ -8,7 +8,7 @@
 
 local Config = {}
 
-Config.Version = "0.7.0-m6"
+Config.Version = "0.8.0-m7"
 
 ---------------------------------------------------------------------------
 -- World
@@ -543,6 +543,16 @@ Config.Sounds = {
 	BuilderRemove = "",
 	Publish = "", -- fanfare
 	PistonPush = "",
+	-- Bumper Brawl
+	BrawlBump = "", -- rubbery thud
+	TileWarn = "", -- rising beeps
+	TileDrop = "", -- crumble
+	KO = "", -- comic whistle splash
+	PowerupGrab = "", -- sparkle
+	HonkWave = "",
+	ShieldUp = "",
+	RankUp = "", -- brass hit
+	Cheer = "",
 }
 
 Config.Juice = {
@@ -579,6 +589,16 @@ Config.Juice = {
 	Finish = { shake = 0.2, shakeTime = 0.1, vibration = 0.5, vibrationTime = 0.08 },
 	Honk = {},
 	StarEarned = { vibration = 0.4, vibrationTime = 0.05 },
+	-- Bumper Brawl (hit-stop 80 ms on a bump is in BrawlClient)
+	BrawlBump = { shake = 0.3, shakeTime = 0.1, vibration = 0.5, vibrationTime = 0.04, sparks = 8 },
+	TileWarn = {},
+	TileDrop = { shake = 0.1, shakeTime = 0.1 },
+	KO = { shake = 0.4, shakeTime = 0.15, vibration = 0.6, vibrationTime = 0.08 },
+	PowerupGrab = { vibration = 0.3, vibrationTime = 0.04 },
+	HonkWave = { shake = 0.2, shakeTime = 0.1 },
+	ShieldUp = {},
+	RankUp = { vibration = 0.5, vibrationTime = 0.08 },
+	Cheer = {},
 }
 
 ---------------------------------------------------------------------------
@@ -751,7 +771,8 @@ Config.Quests = {
 	streakRewards = { 50, 75, 100, "crate_key", 150, 200, "cosmetic" },
 	streakOwnedCoins = 250, -- day 7 when you already own this week's cosmetic
 	giftCoins = 10,
-	liveModes = { "tracks" }, -- add "brawl" and "highway" when those modes ship (milestones 7 and 8)
+	-- Modes quests come from. A mode counts only once its place exists (Shared/Place.modeLive).
+	liveModes = { "tracks", "brawl" }, -- add "highway" in milestone 8
 }
 
 ---------------------------------------------------------------------------
@@ -820,6 +841,7 @@ Config.Hub = {
 
 -- Mode places (Creator Dashboard place ids; 0 until those places exist: the card says Coming soon)
 Config.Places = {
+	start = 0, -- Tumble Park (the start place): where mode places send players back to
 	brawlCasual = 0,
 	brawlRanked = 0,
 	highwayCoop = 0,
@@ -857,6 +879,128 @@ Config.Boards = {
 	topCount = 10,
 	friendsPool = 100, -- the Friends tab picks friends from the all-time top 100 (one read)
 	cacheSeconds = 60,
+}
+
+---------------------------------------------------------------------------
+-- Bumper Brawl (spec: Game modes > Bumper Brawl; Brawl screens; Onboarding > Brawl practice).
+-- Runs in its own places (Cinder Cove Casual and Ranked: brawl.project.json, ranked.project.json).
+-- Every number is (tune) unless the spec fixes it.
+---------------------------------------------------------------------------
+Config.Brawl = {
+	maxPlayers = 8, -- cars in a round (players plus bots)
+	fillTo = 8, -- bots fill the empty slots up to this many cars
+	botFillCasual = 10, -- s after the first player is in the pen (spec)
+	botFillRanked = 20, -- (spec)
+	countdown = 3,
+	roundLength = 120, -- then sudden death (spec)
+	maxLength = 150, -- sudden death ends here: most KOs wins, then most damage dealt (spec)
+	results = 8, -- Queue next skips it
+	requeue = 1,
+	-- The schedule (spec): outer ring at 40 s, middle at 75 s, then one random inner tile every 4 s from
+	-- 95 s, then one every 1 s in sudden death. Each drop flashes a warning for 3 s first.
+	outerDropAt = 40,
+	middleDropAt = 75,
+	innerStart = 95,
+	innerEvery = 4,
+	suddenDeathEvery = 1,
+	warnTime = 3,
+	-- World: the arena, the foam pit under it and the pen (studs, Brawl place only)
+	origin = { 0, 80, 0 },
+	tileSpacing = 15, -- centre to centre (= flat to flat)
+	tileHeight = 3,
+	koDepth = 10, -- out when the car's centre falls this far under the tile tops
+	pitDepth = 34, -- the foam pit's top, under the tile tops
+	arenas = {
+		{ id = "geyser", name = "Geyser Ring", shape = "ring" }, -- 72 tiles round a foam geyser hole
+		{ id = "boardwalk", name = "Boardwalk", shape = "pier" }, -- 72 tiles, 9 by 8
+	},
+	ringColors = { { 255, 214, 120 }, { 120, 200, 255 }, { 255, 140, 170 } }, -- inner, middle, outer
+	warnColor = { 255, 140, 30 },
+	-- The lobby: a foam-ball pen next to the arena
+	pen = { origin = { 0, 80, 320 }, size = 150, balls = 12, ballSize = 7 },
+	-- Practice (first visit): a small arena per player, a slow bot ahead, knockback x1.5 (spec)
+	practice = {
+		origin = { 320, 80, 0 },
+		spacing = 110, -- between practice arenas (along +X)
+		slots = 8,
+		botsToKnock = 2,
+		knockbackBonus = 1.5,
+		coins = 20,
+		botAhead = 30, -- studs (3 car lengths)
+	},
+	-- Knockback (spec): dv = 20 + 0.6 x closing speed x clamp(mass ratio, 0.6, 1.8), capped at 75, then x
+	-- the defender's class multiplier. Same pair cooldown 0.4 s. KO credit: the last bump within 4 s.
+	knockback = {
+		base = 20,
+		factor = 0.6,
+		ratioMin = 0.6,
+		ratioMax = 1.8,
+		cap = 75,
+		up = 0.2, -- a little upward pop with every bump (x dv)
+		pairCooldown = 0.4,
+		koWindow = 4,
+		minClosing = 6, -- a touch slower than this is not a bump
+	},
+	-- Hit checks (spec: Network model): speed within 15% of the car's max, under 8 studs apart
+	hitCheck = { speedSlack = 1.15, gap = 8 },
+	-- Gully the Gull drops a powerup every 12 s on a random standing tile; one held at a time (spec)
+	powerups = {
+		every = 12,
+		firstAt = 6,
+		maxOnArena = 3,
+		pickupRadius = 7,
+		dropTime = 0.9, -- the fall from Gully's beak
+		kinds = { "spring", "shield", "wrench", "honk" },
+	},
+	spring = { mult = 1.6, bumps = 3, seconds = 8 },
+	shield = { seconds = 4 },
+	wrench = { heal = 50 },
+	honk = { radius = 14, speed = 30 },
+	-- Rewards (spec): 20 a round, +5 a KO (max 4), +40 for a win; 900 a day. Idle rounds earn nothing.
+	coins = { round = 20, perKO = 5, maxKOs = 4, win = 40 },
+	dailyCap = 900,
+	afkDistance = 40, -- studs driven in a round (or one bump) to count as playing
+	-- Bots: Captain Hiccup and friends, labelled BOT (spec). Original characters only.
+	bots = {
+		names = { "Captain Hiccup", "Dozer Dot", "Rusty", "Gizmo Gus", "Wobble Bot", "Pip", "Kaboom Cloud" },
+		vehicles = { "starter_buggy", "bumble_bus", "haul_hog", "pocket_sedan", "dune_hopper", "fizz_wagon" },
+		speed = 0.55, -- x the class top speed
+		practiceSpeed = 0.18,
+		accel = 45, -- studs/s^2
+		turnRate = 140, -- degrees per second
+		retarget = { 2.5, 5 }, -- seconds between picking a new car to chase
+		hiccupChance = 0.08, -- per second: Captain Hiccup's crew stall for a moment
+		hiccupTime = 0.7,
+		edgeLook = 0.7, -- seconds ahead they check for a missing tile
+		stun = 0.6, -- seconds a knocked bot coasts before driving again
+		useDelay = { 0.8, 2.5 }, -- seconds before a bot uses a powerup
+	},
+	-- Ranked (spec): win +25, top half +10, bottom half 0, first out -10, AFK or quit -15. Tiers every
+	-- 100 points. Bronze floors at 0. The first 5 rounds cannot lose points. Unlocks after 3 casual
+	-- rounds. Seasons soft-reset by 2 tiers and pay a cosmetic per tier reached.
+	ranked = {
+		unlockRounds = 3,
+		win = 25,
+		topHalf = 10,
+		firstOut = -10,
+		afkOrQuit = -15,
+		tierSize = 100,
+		placements = 5,
+		season = 1, -- bump this to start a new season (every 6 weeks)
+		softResetTiers = 2,
+		tierNames = { "Bronze Bolt", "Silver Spark", "Gold Gear", "Platinum Piston", "Diamond Drift" },
+		-- Season rewards: one per tier reached (Apex tiers pay the Apex item); coins if already owned
+		seasonRewards = {
+			"decal_bronze_bolt",
+			"trail_silver_spark",
+			"rims_gold_gear",
+			"paint_platinum_piston",
+			"trail_diamond_drift",
+			"hat_apex_crown",
+		},
+		seasonOwnedCoins = 250,
+	},
+	countsKey = "brawl", -- this place's live player count (the hub's mode card)
 }
 
 -- Badges (Creator Dashboard ids; 0 until nate creates them)

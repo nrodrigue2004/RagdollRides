@@ -311,18 +311,28 @@ local Remotes: { [string]: RemoteDef } = {
 		burst = 1,
 		since = "6",
 	},
-	["Cheer"] = { dir = "C2S2C", schema = { { t = "integer", min = 1 } }, rate = 0.5, burst = 1, since = "7" },
+	-- An eliminated Brawl driver cheers a finalist (target user id; bots are negative)
+	["Cheer"] = { dir = "C2S2C", schema = { { t = "integer" } }, rate = 0.5, burst = 1, since = "7" },
 
 	-- Milestone 7
+	-- The hitter reports a bump: target (a user id, or a bot's negative id), closing speed, normal
 	["Brawl.Hit"] = {
 		dir = "C2S",
-		schema = { { t = "integer", min = 1 }, { t = "number", min = 0, max = 300 }, { t = "Vector3" } },
+		schema = { { t = "integer" }, { t = "number", min = 0, max = 300 }, { t = "Vector3" } },
 		rate = 6,
 		burst = 6,
 		since = "7",
 	},
+	-- To the car that was hit: { kind = "knock", dv, by } or { kind = "heal", amount } (Pit Wrench);
+	-- to the hitter: { kind = "hit", target, power }
 	["Brawl.Result"] = { dir = "S2C", since = "7" },
 	["Brawl.Powerup"] = { dir = "C2S", schema = {}, rate = 1, burst = 1, since = "7" },
+	-- Round events for everyone: ko, powerup grabs and uses, honk waves, rank ups, practice steps
+	["Brawl.Event"] = { dir = "S2C", since = "7" },
+	["Brawl.Round"] = { dir = "S2C", since = "7" }, -- the results card: { places, mine, arena }
+	["Brawl.Queue"] = { dir = "C2S", schema = {}, rate = 1, burst = 2, since = "7" }, -- Queue next
+	["Brawl.Leave"] = { dir = "C2S", schema = {}, rate = 0.5, burst = 1, since = "7" }, -- back to the park
+	["Brawl.Practice"] = { dir = "C2S", schema = {}, rate = 0.5, burst = 1, since = "7" }, -- skip practice
 
 	-- Milestone 8
 	["Highway.Hit"] = {

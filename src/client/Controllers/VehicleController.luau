@@ -945,10 +945,16 @@ function VehicleController.freezeRender(duration: number)
 	renderFrozenUntil = math.max(renderFrozenUntil, os.clock() + duration)
 end
 
--- RESET: back to the last checkpoint, upright, in 0.5 s (always available)
+-- RESET: back to the last checkpoint, upright, in 0.5 s (always available, except on a Brawl arena
+-- mid-round: setResetAllowed)
+local resetAllowed = true
+function VehicleController.setResetAllowed(value: boolean)
+	resetAllowed = value
+end
+
 function VehicleController.reset()
 	local s = state
-	if not s or s.sequence then
+	if not s or s.sequence or not resetAllowed then
 		return
 	end
 	beginSequence(s, "reset", respawnCFrame(s), Config.Driving.resetDuration)

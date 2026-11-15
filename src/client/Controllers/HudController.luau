@@ -30,6 +30,7 @@ local flailCatcher: TextButton
 local fadeFrame: Frame
 local hintLabel: TextLabel
 local silhouette: Frame
+local resetAllowed = true
 local zoneFrames: { Frame } = {}
 local fireIcon: TextLabel
 local wreckedLabel: TextLabel
@@ -516,7 +517,7 @@ local function update(dt: number)
 	end
 	flailCatcher.Visible = ragdolled
 	touchFrame.Visible = UserInputService.TouchEnabled and not ragdolled
-	resetButton.Visible = not ragdolled
+	resetButton.Visible = not ragdolled and resetAllowed
 
 	-- Fire warning pulse beside the damage silhouette; WRECKED pulses RESET
 	local t = os.clock()
@@ -536,6 +537,11 @@ local function update(dt: number)
 	else
 		resetButton.Size = UDim2.fromScale(0.11 * layout.controlSize, 0.11 * layout.controlSize)
 	end
+end
+
+-- The Brawl arena mid-round has no RESET (you would dodge the fall)
+function HudController.setResetAllowed(value: boolean)
+	resetAllowed = value
 end
 
 function HudController.init(all)

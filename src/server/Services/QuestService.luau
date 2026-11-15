@@ -1,8 +1,9 @@
 -- QuestService: daily and weekly quests, the daily chest, the login streak and gifts
 -- (spec: Progression > Quests and streaks, Economy > Gift). Rules and pools are in Shared/Quests.
 -- * Quests are picked per player from the day (or week) on first use, so a rejoin never rerolls them.
---   Until Bumper Brawl and Highway Havoc ship, every quest comes from Tracks and the builder
---   (Config.Quests.liveModes). Events are counted here from what the server saw happen.
+--   Quests come from the modes in Config.Quests.liveModes whose place exists (Shared/Place.modeLive),
+--   so until a mode's place is created, no quest asks for it. Events are counted here from what the
+--   server saw happen (BrawlService sends the Bumper Brawl ones).
 -- * Quest.Claim(id) pays a finished quest (60 / 80 / 100 daily, 300 weekly); "chest" opens the daily
 --   chest once all 3 dailies are claimed (150 coins or a common cosmetic you don't own); "weeklyStars"
 --   pays 5 stars once all 3 weeklies are claimed.
@@ -17,6 +18,7 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Catalog = require(Shared.Catalog)
 local Config = require(Shared.Config)
 local Net = require(Shared.Net)
+local Place = require(Shared.Place)
 local ProfileSchema = require(Shared.ProfileSchema)
 local Quests = require(Shared.Quests)
 local StarterMaps = require(Shared.StarterMaps)
@@ -41,7 +43,12 @@ end
 -- Make sure today's and this week's quests exist (the daily table resets at the UTC day)
 local function ensure(player: Player, profile: { [string]: any })
 	local day = today()
-	local modes = Config.Quests.liveModes
+	local modes = {}
+	for _, mode in Config.Quests.liveModes do
+		if Place.modeLive(mode) then
+			table.insert(modes, mode)
+		end
+	end
 	if #profile.daily.quests == 0 then
 		profile.daily.quests = Quests.pickDaily(day * 7349 + player.UserId, modes)
 	end

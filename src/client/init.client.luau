@@ -1,5 +1,7 @@
 -- Client entry point. Players have no avatar character in Ragdoll Rides: they are always in a vehicle,
 -- with their rider in the seat. Controllers are created in order, given each other, then started.
+-- Some only run in one place (Shared/Place): the map builder, browsing, quick races and the hub in
+-- Tumble Park; Bumper Brawl in Cinder Cove.
 
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
@@ -24,8 +26,11 @@ pcall(function()
 	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
 end)
 
-require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Net")).waitForRemotes()
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+require(Shared:WaitForChild("Net")).waitForRemotes()
+local role = require(Shared:WaitForChild("Place")).role()
 
+-- { name, module, only in this place role (nil = every place) }
 local ORDER = {
 	{ "Input", "InputController" },
 	{ "SurfaceEffects", "SurfaceEffects" },
@@ -41,13 +46,21 @@ local ORDER = {
 	{ "Profile", "ProfileClient" },
 	{ "Settings", "SettingsMenu" },
 	{ "Tracks", "TracksClient" },
-	{ "Builder", "BuilderClient" },
-	{ "Browse", "BrowseClient" },
+	{ "Builder", "BuilderClient", "Hub" },
+	{ "Browse", "BrowseClient", "Hub" },
 	{ "Shop", "ShopClient" },
-	{ "Race", "RaceClient" },
-	{ "Hub", "HubClient" },
+	{ "Race", "RaceClient", "Hub" },
+	{ "Hub", "HubClient", "Hub" },
+	{ "Brawl", "BrawlClient", "Brawl" },
 	{ "Dev", "DevPanel" },
 }
+local active = {}
+for _, entry in ORDER do
+	if entry[3] == nil or entry[3] == role then
+		table.insert(active, entry)
+	end
+end
+ORDER = active
 
 local all = {}
 for _, entry in ORDER do

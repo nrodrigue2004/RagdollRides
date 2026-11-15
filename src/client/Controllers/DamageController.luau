@@ -402,6 +402,18 @@ function DamageController.damageZone(zone: number, amount: number)
 	end
 end
 
+-- Pit Wrench (Bumper Brawl): health back to every zone; a blown engine stays blown
+function DamageController.heal(amount: number)
+	local o = own
+	if not o or o.damage.exploded then
+		return
+	end
+	DamageModel.heal(o.damage, amount)
+	refresh(o)
+	sendState(o)
+	juice("Repair")
+end
+
 function DamageController.repair()
 	repairOwn()
 end

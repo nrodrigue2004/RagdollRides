@@ -159,7 +159,12 @@ function HubClient.openModes()
 			glow = lastMode == "brawl",
 			chips = {
 				{ id = "casual", label = "CASUAL" },
-				{ id = "ranked", label = "RANKED", locked = true },
+				-- Ranked opens after 3 casual rounds (spec)
+				{
+					id = "ranked",
+					label = "RANKED",
+					locked = (view.brawlRounds or 0) < Config.Brawl.ranked.unlockRounds,
+				},
 			},
 			chip = chips.brawl,
 			onChip = chip("brawl"),

@@ -25,6 +25,7 @@ local VehicleMath = require("../src/shared/VehicleMath")
 local Round = require("../src/shared/Round")
 local RaceMath = require("../src/shared/RaceMath")
 local Boards = require("../src/shared/Boards")
+local BrawlMath = require("../src/shared/BrawlMath")
 
 local passed, failed = 0, 0
 local current = ""
@@ -1656,6 +1657,221 @@ test("boards: scopes, tabs and the pinned row", function()
 	check(not Boards.shouldPost(30000, 30000, false), "a tie does not post")
 	check(not Boards.shouldPost(nil, 30000, true), "board-banned players do not post")
 end)
+test("brawl: arenas have 72 tiles in rings of 18, 24 and 30", function()
+	local cfg = Config.Brawl
+	for _, arena in cfg.arenas do
+		local layout = BrawlMath.layout(arena.shape, cfg.tileSpacing)
+		check(#layout.tiles == 72, arena.id .. " has 72 tiles (got " .. #layout.tiles .. ")")
+		local counts = { 0, 0, 0 }
+		for _, tile in layout.tiles do
+			counts[tile.ring] += 1
+		end
+		check(counts[1] == 18 and counts[2] == 24 and counts[3] == 30, arena.id .. " rings 18 / 24 / 30")
+		-- Every tile is found from its own centre and from just inside its edge
+		local ok = true
+		for _, tile in layout.tiles do
+			if BrawlMath.tileAt(layout, tile.x, tile.z) ~= tile.index then
+				ok = false
+			end
+			if BrawlMath.tileAt(layout, tile.x + cfg.tileSpacing * 0.45, tile.z) ~= tile.index then
+				ok = false
+			end
+		end
+		check(ok, arena.id .. " tileAt finds every tile")
+		check(BrawlMath.tileAt(layout, layout.radius + 30, 0) == nil, arena.id .. " nothing past the edge")
+		-- Neighbours are one spacing apart (no gaps to fall through)
+		local a, b = layout.tiles[1], nil
+		local nearest = math.huge
+		for _, t in layout.tiles do
+			if t ~= a then
+				local d = math.sqrt((t.x - a.x) ^ 2 + (t.z - a.z) ^ 2)
+				if d < nearest then
+					nearest, b = d, t
+				end
+			end
+		end
+		near(nearest, cfg.tileSpacing, 1e-6, arena.id .. " neighbour spacing")
+		check(b ~= nil, "found a neighbour")
+		-- Rings go outward
+		local maxInner, minOuter = 0, math.huge
+		for _, t in layout.tiles do
+			local d = math.sqrt(t.x * t.x + t.z * t.z)
+			if t.ring == 1 then
+				maxInner = math.max(maxInner, d)
+			elseif t.ring == 3 then
+				minOuter = math.min(minOuter, d)
+			end
+		end
+		check(maxInner < minOuter, arena.id .. " inner ring inside the outer ring")
+		local spawns = BrawlMath.spawnTiles(layout, 8)
+		local seen = {}
+		for _, index in spawns do
+			check(layout.tiles[index].ring == 2, arena.id .. " spawns on the middle ring")
+			check(not seen[index], arena.id .. " spawn tiles differ")
+			seen[index] = true
+		end
+		check(#spawns == 8, arena.id .. " 8 spawns")
+	end
+	local ring = BrawlMath.layout("ring", cfg.tileSpacing)
+	check(BrawlMath.tileAt(ring, 0, 0) == nil, "the geyser hole in the middle of the ring")
+	local practice = BrawlMath.layout("practice", cfg.tileSpacing)
+	check(#practice.tiles == 19, "practice arena has 19 tiles")
+	check(BrawlMath.tileAt(practice, 0, 0) ~= nil, "practice has a middle tile")
+end)
+
+test("brawl: the drop plan follows the schedule", function()
+	local cfg = Config.Brawl
+	local layout = BrawlMath.layout("ring", cfg.tileSpacing)
+	local plan = BrawlMath.dropPlan(layout, 12345, cfg)
+	local byTime: { [number]: number } = {}
+	local dropped = {}
+	for _, d in plan do
+		byTime[d.at] = (byTime[d.at] or 0) + 1
+		check(not dropped[d.tile], "a tile drops once")
+		dropped[d.tile] = true
+		local ring = layout.tiles[d.tile].ring
+		if d.at == 40 then
+			check(ring == 3, "40 s drops the outer ring")
+		elseif d.at == 75 then
+			check(ring == 2, "75 s drops the middle ring")
+		else
+			check(ring == 1 and d.at >= 95, "inner tiles from 95 s")
+		end
+	end
+	check(byTime[40] == 30 and byTime[75] == 24, "whole rings drop together")
+	for _, t in { 95, 99, 103, 107, 111, 115, 119 } do
+		check(byTime[t] == 1, "one inner tile at " .. t .. " s")
+	end
+	check(byTime[96] == nil and byTime[118] == nil, "nothing between the 4 s drops")
+	for t = 120, 130 do
+		check(byTime[t] == 1, "sudden death: one tile at " .. t .. " s")
+	end
+	check(byTime[131] == nil, "the inner ring is gone by 131 s (18 tiles)")
+	local again = BrawlMath.dropPlan(layout, 12345, cfg)
+	local same = #again == #plan
+	for i, d in plan do
+		if again[i].tile ~= d.tile or again[i].at ~= d.at then
+			same = false
+		end
+	end
+	check(same, "the same seed gives the same plan everywhere")
+	local other = BrawlMath.dropPlan(layout, 999, cfg)
+	local differs = false
+	for i, d in plan do
+		if other[i].tile ~= d.tile then
+			differs = true
+		end
+	end
+	check(differs, "another seed shuffles the inner ring")
+	local r = BrawlMath.rng(7)
+	local okRange = true
+	for _ = 1, 200 do
+		local v = r()
+		if v < 0 or v >= 1 then
+			okRange = false
+		end
+	end
+	check(okRange, "rng stays in 0..1")
+end)
+
+test("brawl: knockback, hit checks and KO credit", function()
+	local k = Config.Brawl.knockback
+	near(BrawlMath.knockback(0, 1, 1, 1, nil, k), 20, 1e-9, "a standing bump is 20")
+	near(BrawlMath.knockback(50, 1, 1, 1, nil, k), 50, 1e-9, "20 + 0.6 x 50")
+	near(BrawlMath.knockback(50, 2.6, 0.6, 1, nil, k), 20 + 0.6 * 50 * 1.8, 1e-9, "mass ratio caps at 1.8")
+	near(BrawlMath.knockback(50, 0.6, 2.6, 1, nil, k), 20 + 0.6 * 50 * 0.6, 1e-9, "mass ratio floors at 0.6")
+	near(BrawlMath.knockback(200, 1, 1, 1, nil, k), 75, 1e-9, "capped at 75")
+	near(BrawlMath.knockback(200, 1, 1, 1.25, nil, k), 75 * 1.25, 1e-9, "then x the buggy's 1.25")
+	near(BrawlMath.knockback(200, 1, 1, 0.6, 1.6, k), 75 * 0.6 * 1.6, 1e-9, "spring bumper x1.6")
+	local hc = { speedSlack = 1.15, gap = 8, pairCooldown = 0.4 }
+	local base = { reported = 60, attackerTop = 100, targetSpeed = 0, gap = 2, sinceLast = 5 }
+	check(BrawlMath.checkHit(base, hc) == 60, "a fair bump passes")
+	local function with(field: string, value: number)
+		local r = table.clone(base) :: any
+		r[field] = value
+		return r
+	end
+	check(select(2, BrawlMath.checkHit(with("sinceLast", 0.3), hc)) == "cooldown", "pair cooldown 0.4 s")
+	check(select(2, BrawlMath.checkHit(with("gap", 9), hc)) == "far", "over 8 studs apart")
+	check(select(2, BrawlMath.checkHit(with("reported", 116), hc)) == "speed", "over the top speed + 15%")
+	check(BrawlMath.checkHit(with("reported", 114), hc) == 114, "within 15%")
+	check(BrawlMath.koCredit(5, 10, 13.9, 4) == 5, "KO within 4 s is credited")
+	check(BrawlMath.koCredit(5, 10, 14.1, 4) == nil, "after 4 s nobody gets it")
+	check(BrawlMath.koCredit(5, 10, 100, nil) == 5, "an explosion credits the last bumper")
+	check(BrawlMath.koCredit(nil, nil, 1, 4) == nil, "never bumped")
+end)
+
+test("brawl: placements, tiebreaks and pay", function()
+	local placed = BrawlMath.placements({
+		{ id = 1, outAt = 50, kos = 0, damage = 0 },
+		{ id = 2, outAt = nil, kos = 1, damage = 10 },
+		{ id = 3, outAt = 80, kos = 2, damage = 0 },
+		{ id = 4, outAt = 80, kos = 2, damage = 30 },
+	})
+	check(placed[1].id == 2 and not placed[1].out, "the last car on the arena wins")
+	check(placed[2].id == 4 and placed[3].id == 3, "out together: more damage dealt places higher")
+	check(placed[4].id == 1 and placed[4].place == 4, "first out is last")
+	local timeUp = BrawlMath.placements({
+		{ id = 1, outAt = nil, kos = 1, damage = 90 },
+		{ id = 2, outAt = nil, kos = 3, damage = 10 },
+		{ id = 3, outAt = nil, kos = 3, damage = 20 },
+	})
+	check(timeUp[1].id == 3 and timeUp[2].id == 2 and timeUp[3].id == 1, "at 150 s: KOs, then damage")
+	check(
+		BrawlMath.alive({ { id = 1, kos = 0, damage = 0 }, { id = 2, outAt = 3, kos = 0, damage = 0 } }) == 1,
+		"alive count"
+	)
+	local c = Config.Brawl.coins
+	check(BrawlMath.coins(3, 0, false, c) == 20, "20 a round")
+	check(BrawlMath.coins(2, 2, false, c) == 30, "+5 a KO")
+	check(BrawlMath.coins(1, 9, false, c) == 20 + 20 + 40, "KOs max 4, +40 for the win")
+	check(BrawlMath.coins(1, 3, true, c) == 0, "idle rounds earn nothing")
+end)
+
+test("brawl: ranked points, tiers and seasons", function()
+	local r = Config.Brawl.ranked
+	check(BrawlMath.rankedDelta(1, 8, false, false, r) == 25, "win +25")
+	check(BrawlMath.rankedDelta(4, 8, false, false, r) == 10, "top half +10")
+	check(BrawlMath.rankedDelta(5, 8, false, false, r) == 0, "bottom half 0")
+	check(BrawlMath.rankedDelta(8, 8, false, false, r) == -10, "first out -10")
+	check(BrawlMath.rankedDelta(2, 8, true, false, r) == -15, "AFK or quit -15")
+	check(BrawlMath.rankedDelta(2, 8, false, true, r) == 0, "a bot win gives no points")
+	check(BrawlMath.rankedDelta(8, 8, false, true, r) == 0, "a bot win costs no points either")
+	check(BrawlMath.rankedDelta(2, 2, false, false, r) == -10, "2 cars: second is first out")
+	local fresh = { season = 1, points = 0, placementsLeft = 5, bestTier = 0 }
+	local after, applied = BrawlMath.applyRanked(fresh, -10, r)
+	check(after.points == 0 and applied == 0 and after.placementsLeft == 4, "placements cannot lose points")
+	local veteran = { season = 1, points = 5, placementsLeft = 0, bestTier = 0 }
+	local floored = BrawlMath.applyRanked(veteran, -15, r)
+	check(floored.points == 0, "Bronze floors at 0")
+	local climber = { season = 1, points = 90, placementsLeft = 0, bestTier = 0 }
+	local up, _, rankUp = BrawlMath.applyRanked(climber, 25, r)
+	check(up.points == 115 and rankUp and up.bestTier == 1, "100 points is Silver Spark")
+	local down = BrawlMath.applyRanked({ season = 1, points = 105, placementsLeft = 0, bestTier = 1 }, -10, r)
+	check(down.points == 95 and down.bestTier == 1, "you can drop a tier; best tier stays")
+	check(
+		BrawlMath.tierName(0, r) == "Bronze Bolt" and BrawlMath.tierName(4, r) == "Diamond Drift",
+		"tier names"
+	)
+	check(BrawlMath.tierName(5, r) == "Apex I" and BrawlMath.tierName(7, r) == "Apex III", "Apex tiers")
+	check(BrawlMath.tierName(20, r) == "Apex 16", "Apex has no end")
+	local first, none =
+		BrawlMath.seasonRoll({ season = 0, points = 0, placementsLeft = 5, bestTier = 0 }, 1, r)
+	check(first.season == 1 and #none == 0, "the first season only stamps the number")
+	local same, nothing = BrawlMath.seasonRoll(up, 1, r)
+	check(same.points == up.points and #nothing == 0, "same season: nothing changes")
+	local gold = { season = 1, points = 345, placementsLeft = 0, bestTier = 3 }
+	local rolled, rewards = BrawlMath.seasonRoll(gold, 2, r)
+	check(rolled.points == 100 and rolled.season == 2 and rolled.bestTier == 1, "soft reset by 2 tiers")
+	check(#rewards == 4 and rewards[1] == 0 and rewards[4] == 3, "a reward per tier reached")
+	local bronze = BrawlMath.seasonRoll({ season = 1, points = 150, placementsLeft = 0, bestTier = 1 }, 2, r)
+	check(bronze.points == 0, "never below Bronze")
+	check(#r.seasonRewards >= #r.tierNames + 1, "a season reward for every named tier and Apex")
+	for _, id in r.seasonRewards do
+		local item = Catalog.byId[id]
+		check(item ~= nil and item.source == "ranked" and item.coins == nil, id .. " is a ranked-only item")
+	end
+end)
 ---------------------------------------------------------------------------
 -- Optional: check the built place file has the scripts in the right services
 local placePath = process.args[1]
@@ -1691,6 +1907,8 @@ if placePath then
 				"Round",
 				"RaceMath",
 				"Boards",
+				"BrawlMath",
+				"Place",
 				"Movers",
 				"PieceCatalog",
 				"TracksMath",
@@ -1728,6 +1946,7 @@ if placePath then
 				"ShopClient",
 				"RaceClient",
 				"HubClient",
+				"BrawlClient",
 			}
 		do
 			check(client ~= nil and client:FindFirstChild("Controllers"):FindFirstChild(name) ~= nil, name)
@@ -1743,6 +1962,7 @@ if placePath then
 		check(ui ~= nil and ui:FindFirstChild("ShopHud") ~= nil, "Ui.ShopHud")
 		check(ui ~= nil and ui:FindFirstChild("HubHud") ~= nil, "Ui.HubHud")
 		check(ui ~= nil and ui:FindFirstChild("RaceHud") ~= nil, "Ui.RaceHud")
+		check(ui ~= nil and ui:FindFirstChild("BrawlHud") ~= nil, "Ui.BrawlHud")
 		local services = server and server:FindFirstChild("Services")
 		for _, name in
 			{
@@ -1764,6 +1984,10 @@ if placePath then
 				"HubService",
 				"TeleportHub",
 				"BoardService",
+				"BrawlService",
+				"BrawlArena",
+				"BrawlBots",
+				"LiveCounts",
 				"TestTrack",
 				"TracksService",
 				"VehicleService",
@@ -1773,6 +1997,27 @@ if placePath then
 		end
 		check(game:GetService("Players").CharacterAutoLoads == false, "no avatar characters")
 		check(game:GetService("Workspace").StreamingEnabled == true, "streaming on")
+		check(game:GetService("Workspace"):GetAttribute("PlaceRole") == nil, "the hub place has no PlaceRole")
+	end)
+	-- The Cinder Cove place files are the same tree plus the Brawl role (and Ranked for the ranked one)
+	test("Brawl place files", function()
+		local fs = require("@lune/fs")
+		local serde = require("@lune/serde")
+		local base = serde.decode("json", fs.readFile("default.project.json"))
+		for file, ranked in { ["brawl.project.json"] = false, ["ranked.project.json"] = true } do
+			local project = serde.decode("json", fs.readFile(file))
+			local attributes = project.tree.Workspace["$attributes"] or {}
+			check(attributes.PlaceRole == "Brawl", file .. " PlaceRole")
+			check((attributes.Ranked == true) == ranked, file .. " Ranked")
+			for key in base.tree do
+				check(project.tree[key] ~= nil, file .. " has " .. key)
+			end
+			check(
+				serde.encode("json", project.tree.ServerScriptService)
+					== serde.encode("json", base.tree.ServerScriptService),
+				file .. " same server tree"
+			)
+		end
 	end)
 end
 

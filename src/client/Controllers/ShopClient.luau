@@ -734,7 +734,7 @@ function ShopClient.open(which: string, startTab: string?)
 	if v == nil then
 		return
 	end
-	if controllers.Browse.isOpen() then
+	if controllers.Browse and controllers.Browse.isOpen() then
 		controllers.Browse.close()
 	end
 	if controllers.Settings.isOpen() then

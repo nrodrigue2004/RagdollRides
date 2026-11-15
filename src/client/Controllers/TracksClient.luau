@@ -753,6 +753,8 @@ local NOTICES = {
 	partyInviteGone = "That invite ran out.",
 	raceFromHub = "Quick races start from the hub's race pad.",
 	modeSoon = "Coming soon! This mode is being built.",
+	rankedLocked = "Ranked opens after 3 casual Bumper Brawl rounds. Play some casual first!",
+	seasonRewards = "New ranked season! Your rewards are in the garage.",
 	teleportFailed = "Couldn't get there. Try again in a moment!",
 }
 
@@ -769,7 +771,9 @@ function TracksClient.start()
 	end
 	TracksHud.build(controllers.Hud.getGui(), controllers.Hud.getResetButton(), {
 		onMaps = function()
-			controllers.Browse.toggle()
+			if controllers.Browse then
+				controllers.Browse.toggle()
+			end
 		end,
 		onBuild = function()
 			if controllers.Builder then
@@ -786,10 +790,16 @@ function TracksClient.start()
 			controllers.Shop.toggle("quests")
 		end,
 		onHub = function()
-			controllers.Hub.goHub()
+			if controllers.Hub then
+				controllers.Hub.goHub()
+			elseif controllers.Brawl then
+				controllers.Brawl.goHome()
+			end
 		end,
 		onTop = function()
-			controllers.Hub.openBoard()
+			if controllers.Hub then
+				controllers.Hub.openBoard()
+			end
 		end,
 		onSettings = function()
 			if controllers.Settings.isOpen() then
@@ -801,6 +811,13 @@ function TracksClient.start()
 	})
 	TracksHud.setTimer(nil)
 	TracksHud.setCheckpoints(0, 0)
+	if controllers.Hub == nil then
+		-- A mode place (Cinder Cove): no maps, builder or map boards here; HUB goes back to the park
+		for _, name in { "Maps", "Build", "Top" } do
+			TracksHud.setButtonVisible(name, false)
+		end
+		TracksHud.setButtonVisible("Hub", true)
+	end
 
 	controllers.Profile.Changed:Connect(function(view, previous)
 		TracksHud.setWallet(view.coins, view.stars, controllers.Profile.goal())

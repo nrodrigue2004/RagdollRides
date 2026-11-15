@@ -19,6 +19,7 @@ local TestTrack = require(script.Parent.TestTrack)
 local VehicleService = {}
 
 VehicleService.Spawned = Signal.new() -- (player, model)
+VehicleService.DamageChanged = Signal.new() -- (player, state buffer): the owner sent a new Damage.State
 
 -- Where a player's car goes when it spawns with no position given (TracksService sets it: the start of
 -- the player's current map). nil = the test track's spawn row.
@@ -200,6 +201,7 @@ function VehicleService.init()
 		end
 		damageStates[player] = state
 		Net.fireAllExcept("Damage.State", player, player.UserId, state)
+		VehicleService.DamageChanged:Fire(player, state)
 	end)
 
 	Players.PlayerAdded:Connect(onPlayerAdded)

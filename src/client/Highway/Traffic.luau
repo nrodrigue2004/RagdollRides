@@ -489,6 +489,33 @@ function Traffic.blast(pool: Pool, rig: Rig)
 	pool.o.onBlast(position)
 end
 
+-- BOOM (Wreck Mode): every car within radius is thrown and counts as yours (link 1); the near ones go off too
+function Traffic.boom(pool: Pool, position: Vector3, radius: number)
+	for _, rig in pool.rigs do
+		if rig.id == nil or rig.state == "free" then
+			continue
+		end
+		local offset = rig.body.Position - position
+		local distance = offset.Magnitude
+		if distance > radius then
+			continue
+		end
+		local fall = 1 - distance / radius
+		local flat = Vector3.new(offset.X, 0, offset.Z)
+		local outward = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.xAxis
+		local impact = math.min(30 + 50 * fall, cfg.score.maxImpact)
+		Traffic.hit(pool, rig, impact, 1, true)
+		rig.body:ApplyImpulse(
+			(outward * 90 * fall + Vector3.new(0, 35 + 40 * fall, 0)) * rig.body.AssemblyMass
+		)
+		pool.o.report(if rig.tutorial then TUTORIAL_KIND else 0, rig.id, impact, 1, rig.body.Position)
+		pool.o.onSmash(rig, impact, rig.body.Position)
+		if distance <= radius * 0.5 and not rig.exploding then
+			Traffic.armBlast(pool, rig)
+		end
+	end
+end
+
 -- A car you sent flying hit something: a chain hit for you
 function Traffic.onRigTouched(pool: Pool, rig: Rig, other: BasePart)
 	if rig.id == nil or not rig.mine or rig.link >= 3 or rig.state == "lane" then

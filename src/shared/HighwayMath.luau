@@ -206,7 +206,11 @@ export type TrafficConfig = {
 	types: { TrafficType },
 }
 export type EventDef = { id: string, spacing: number?, tankers: number?, buses: number?, ramps: boolean? }
-export type TrafficOpts = { event: EventDef?, quiet: number? }
+-- ramp: the ride gets harder. Each slot's emptiness is decided by where its car was when the ride began
+-- (t0, server seconds since the road's epoch) against the ride's start s0: slots further ahead at the start
+-- are fuller. A slot never flips between empty and full during a ride, so cars never pop in or out.
+export type RampOpts = { s0: number, t0: number, start: number, finish: number, over: number }
+export type TrafficOpts = { event: EventDef?, quiet: number?, ramp: RampOpts? }
 export type Car = { id: number, lane: number, index: number, s: number, speed: number, kind: TrafficType }
 
 function HighwayMath.slotId(lane: number, index: number): number
@@ -265,13 +269,19 @@ function HighwayMath.car(road: Road, id: number, t: number, cfg: TrafficConfig, 
 	if lane < 1 or lane > road.lanes then
 		return nil
 	end
-	if HighwayMath.hash(road.seed, lane * 977 + 13, index, 1) < cfg.empty then
-		return nil
-	end
 	local spacing = spacingOf(opts)
 	local jitter = (HighwayMath.hash(road.seed, lane * 977 + 13, index, 3) * 2 - 1) * cfg.jitter
 	local speed = cfg.laneSpeeds[lane] or cfg.laneSpeeds[#cfg.laneSpeeds]
 	local base = (index * cfg.grid + jitter) * spacing
+	local empty = cfg.empty
+	local ramp = opts and opts.ramp
+	if ramp then
+		local f = math.clamp((base + speed * ramp.t0 - ramp.s0) / ramp.over, 0, 1)
+		empty = ramp.start + (ramp.finish - ramp.start) * f
+	end
+	if HighwayMath.hash(road.seed, lane * 977 + 13, index, 1) < empty then
+		return nil
+	end
 	return {
 		id = id,
 		lane = lane,
@@ -357,6 +367,9 @@ end
 export type Wrench = { index: number, s: number, lane: number }
 
 function HighwayMath.wrenchesBetween(road: Road, from: number, to: number, every: number): { Wrench }
+	if every <= 0 then
+		return {}
+	end
 	local list = {}
 	for index = math.floor(from / every) - 1, math.ceil(to / every) + 1 do
 		local s = index * every + every / 2
@@ -438,6 +451,22 @@ function HighwayMath.startS(others: { number }, behind: number, maxS: number): n
 		return 0
 	end
 	return last - behind
+end
+
+-- The traffic options for one ride: the day's event (or the tutorial's quiet road) and the ramp that
+-- thickens traffic from where the ride began. The server and the device build the same table.
+function HighwayMath.runOpts(
+	event: EventDef?,
+	quiet: number?,
+	s0: number,
+	t0: number,
+	density: { start: number, finish: number, over: number }
+): TrafficOpts
+	return {
+		event = event,
+		quiet = quiet,
+		ramp = { s0 = s0, t0 = t0, start = density.start, finish = density.finish, over = density.over },
+	}
 end
 
 return HighwayMath

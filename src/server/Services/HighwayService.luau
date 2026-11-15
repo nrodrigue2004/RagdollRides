@@ -1,10 +1,17 @@
 -- HighwayService: Highway Havoc runs in Sunny Pass (spec: Game modes > Highway Havoc; Bone breaks;
 -- Anti-exploit > Inflated Highway scores; Network model > Highway). The server owns the score.
--- * One seed per server: every device builds the same road and the same traffic from it and the server
---   clock (Shared/HighwayMath). Highway.Seed on join and when the UTC day (the daily event) changes.
--- * Runs: each player rides their own 210 s run, joining behind the pack already moving at 50 studs/s;
---   it ends at the timer, the 12th bone break or when the car explodes. Ride again starts the next one.
---   A first-timer's first run is the 90 s tutorial lane: a quiet copy of the road of their own.
+-- Ride then Wreck (nate, 2026-11-15, replacing the spec's 3:30 timed smash run):
+-- * The ride: go as far as you can through traffic without crashing. Distance scores (x2 and x3 near
+--   your top speed), near misses score big, and traffic thickens the further you get. The server measures
+--   the distance itself from your car's position (4 times a second, capped at what the car can do).
+-- * The crash ends the ride: a traffic hit at I 22+ (lighter is a scrape), a Huge crash, being thrown, a
+--   hard versus bump or blowing up. Then Wreck Mode: 10 s where everything you smash scores (combos,
+--   chains, pile-ups, bone breaks) and BOOM blows your car up once. Then the results.
+-- * One seed per server: every device builds the same road from it and the server clock
+--   (Shared/HighwayMath). Traffic is the same maths, but each ride's density ramp starts where that ride
+--   began, so each player's traffic is their own; in co-op other players' cars are ghosts.
+--   Highway.Seed on join and when the UTC day (the daily event) changes.
+-- * A first-timer's first ride is on the tutorial lane: a quiet copy of the road of their own.
 -- * Hits: the hitter's device reports (kind, id, I, chain link). The server rebuilds where that traffic
 --   car, prop or tutorial car should be and accepts only one near the player (12 studs plus what speed
 --   and ping explain); a car already hit is tracked from where it was hit. Points come from Shared/Score,
@@ -76,6 +83,15 @@ type Run = {
 	lastFlip: number,
 	rejected: number,
 	flagged: boolean,
+	phase: string, -- "ride" or "wreck"
+	lastS: number, -- the ride: where the car was at the last check
+	lastCheck: number,
+	lastProgress: number, -- when it last moved forward
+	distance: number, -- studs ridden
+	ridePoints: number,
+	rideCarry: number, -- fractions of a point carried to the next check
+	wreckEndsAt: number,
+	why: string, -- what ended the ride
 }
 
 local versus = false
@@ -215,11 +231,18 @@ local function startRun(player: Player)
 	local t = now()
 	local length = if tutorial then cfg.tutorial.length else cfg.runLength
 	nextRunId += 1
+	local opts = HighwayMath.runOpts(
+		if tutorial then nil else event,
+		if tutorial then cfg.tutorial.quiet else nil,
+		s0,
+		t - epoch,
+		cfg.ride.density
+	)
 	local run: Run = {
 		id = nextRunId,
 		road = r,
 		tutorial = tutorial,
-		opts = if tutorial then { quiet = cfg.tutorial.quiet } else { event = event },
+		opts = opts,
 		event = event,
 		s0 = s0,
 		lane = lane,
@@ -238,6 +261,15 @@ local function startRun(player: Player)
 		lastFlip = t,
 		rejected = 0,
 		flagged = false,
+		phase = "ride",
+		lastS = s0,
+		lastCheck = t,
+		lastProgress = t,
+		distance = 0,
+		ridePoints = 0,
+		rideCarry = 0,
+		wreckEndsAt = math.huge,
+		why = "",
 	}
 	runs[player] = run
 	Analytics.modeStep(player, Analytics.MODE.roundStart)
@@ -253,6 +285,7 @@ local function startRun(player: Player)
 		startAt = t,
 		endsAt = run.endsAt,
 		length = length,
+		t0 = t - epoch, -- the traffic ramp's clock (HighwayMath.runOpts)
 	})
 	-- The car goes down on the road after Highway.Start, so the device has built the road under it
 	VehicleService.spawn(player, vehicleFor(player), roadCFrame(r, s0, lane))
@@ -335,6 +368,66 @@ local function noteWreck(player: Player, run: Run, t: number)
 	end
 end
 
+-- The crash: the ride is over and Wreck Mode begins
+local function startWreck(player: Player, run: Run, why: string)
+	if run.phase ~= "ride" then
+		return
+	end
+	local t = now()
+	run.phase = "wreck"
+	run.why = why
+	run.wreckEndsAt = t + cfg.ride.wreckLength
+	Net.fire("Highway.Event", player, {
+		kind = "wreckStart",
+		run = run.id,
+		endsAt = run.wreckEndsAt,
+		meters = math.floor(run.distance * cfg.ride.metersPerStud),
+		ridePoints = run.ridePoints,
+		why = why,
+	})
+	dirty[player] = true
+end
+
+-- The ride: distance from the car's own position on the road, at most what the car could have done
+local function stepRide(player: Player, run: Run, t: number)
+	local chassis = chassisOf(player)
+	if chassis == nil then
+		run.lastCheck = t
+		return
+	end
+	local dt = t - run.lastCheck
+	run.lastCheck = t
+	if dt <= 0 then
+		return
+	end
+	local s = HighwayMath.locate(run.road, chassis.Position.X, chassis.Position.Z)
+	local progress = s - run.lastS
+	run.lastS = s
+	if progress <= 0.5 then
+		if t - run.lastProgress >= cfg.ride.idleLimit then
+			startWreck(player, run, "idle")
+		end
+		return
+	end
+	run.lastProgress = t
+	local vehicle = Config.Vehicles[vehicleFor(player)]
+	local top = Config.Classes[vehicle.class].topSpeed
+	local allowed = (top * cfg.ride.maxProgress + 30) * dt
+	if progress > allowed + 40 then
+		reject(player, run, "ride fast")
+		progress = allowed
+	end
+	progress = math.min(progress, allowed)
+	run.distance += progress
+	local exact = Score.ridePoints(progress, (progress / dt) / top, cfg.ride) + run.rideCarry
+	local whole = math.floor(exact)
+	run.rideCarry = exact - whole
+	if whole > 0 then
+		run.ridePoints += Score.addBonus(run.score, whole, math.huge)
+		scored(player, whole)
+	end
+end
+
 local function onHit(player: Player, kind: number, id: number, impact: number, link: number)
 	local run = runs[player]
 	if not active(run) then
@@ -349,6 +442,15 @@ local function onHit(player: Player, kind: number, id: number, impact: number, l
 	local pos = chassis.Position
 	local reach = tolerance(player, chassis)
 	impact = math.min(impact, impactCap(player))
+	if r.phase == "ride" then
+		if kind == 2 then
+			return -- players: a hard versus bump ends the ride from the device (Highway.Trick "crash")
+		elseif (kind == 0 or kind == 3) and impact < cfg.ride.crashImpact and link == 0 then
+			return -- a scrape: no points, the ride goes on
+		elseif (kind == 0 or kind == 3) and link > 0 then
+			return -- nothing you sent flying yet
+		end
+	end
 	local points = 0
 	if kind == 0 or kind == 3 then
 		if kind == 3 and not r.tutorial then
@@ -392,14 +494,10 @@ local function onHit(player: Player, kind: number, id: number, impact: number, l
 			end
 			rec = { hard = 0, wrecked = false, at = t, x = x, z = z, base = base }
 			r.hits[key] = rec
-			if kind == 0 then
-				Net.fireAllExcept("Highway.Event", player, {
-					kind = "wreck",
-					id = id,
-					by = player.UserId,
-					at = Vector3.new(x, r.road.origin[2], z),
-				})
-			end
+			-- (Each ride's traffic is its own, so a wreck is never sent to other players' devices.)
+		end
+		if r.phase == "ride" then
+			startWreck(player, r, "traffic")
 		end
 		local hit = rec :: HitRecord
 		hit.at = t
@@ -460,8 +558,15 @@ local function onTrick(player: Player, kind: string, id: number, value: number)
 	end
 	local t = now()
 	local points = 0
+	if kind == "crash" then
+		-- The device saw the ride end (a Huge crash, a throw, a wall, a versus bump): Wreck Mode
+		if r.phase == "ride" then
+			startWreck(player, r, "crash")
+		end
+		return
+	end
 	if kind == "near" then
-		if r.near[id] or r.tutorial then
+		if r.near[id] then
 			return
 		end
 		local speed = chassis.AssemblyLinearVelocity.Magnitude
@@ -525,6 +630,9 @@ local function finishRun(player: Player, reason: string)
 	stats.highwayRuns = (stats.highwayRuns or 0) + 1
 	stats.bestHighway = math.max(previousBest, s.score)
 	stats.bestBones = math.max(stats.bestBones or 0, s.breaks)
+	local meters = math.floor(run.distance * cfg.ride.metersPerStud)
+	local previousDistance = stats.bestDistance or 0
+	stats.bestDistance = math.max(previousDistance, meters)
 	stats.pileups = (stats.pileups or 0) + s.pileups
 	-- The daily Havoc target opens the daily chest once (150 coins or a common cosmetic you don't own)
 	local before = profile.daily.havoc or 0
@@ -563,17 +671,17 @@ local function finishRun(player: Player, reason: string)
 		local week = Quests.weekOf(day)
 		BoardStore.post(BOARD_STORE, Boards.modeScope("HW_Score", "D", day), player.UserId, s.score, true)
 		BoardStore.post(BOARD_STORE, Boards.modeScope("HW_Score", "W", week), player.UserId, s.score, true)
-		if s.breaks > 0 then
-			local value = Boards.bonesValue(s.breaks, s.score)
-			BoardStore.post(BOARD_STORE, Boards.modeScope("HW_Bones", "D", day), player.UserId, value, true)
-			BoardStore.post(BOARD_STORE, Boards.modeScope("HW_Bones", "W", week), player.UserId, value, true)
+		if meters > 0 then
+			BoardStore.post(BOARD_STORE, Boards.modeScope("HW_Dist", "D", day), player.UserId, meters, true)
+			BoardStore.post(BOARD_STORE, Boards.modeScope("HW_Dist", "W", week), player.UserId, meters, true)
 		end
 	end
 	DataService.changed(player)
 	pcall(function()
 		game:GetService("AnalyticsService"):LogCustomEvent(player, "highway_run", s.score, {
 			[Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = string.format(
-				"bones %d, x%d, pileups %d",
+				"%d m, bones %d, x%d, pileups %d",
+				meters,
 				s.breaks,
 				s.bestMultiplier,
 				s.pileups
@@ -620,6 +728,11 @@ local function finishRun(player: Player, reason: string)
 			tutorial = run.tutorial,
 			event = if run.tutorial then nil else run.event.id,
 			challenge = challenge,
+			meters = meters,
+			bestMeters = stats.bestDistance,
+			newBestMeters = meters > previousDistance and previousDistance > 0,
+			ridePoints = run.ridePoints,
+			wreckPoints = s.score - run.ridePoints,
 		})
 	end
 end
@@ -631,6 +744,9 @@ local function onBone(player: Player, piece: number, impact: number)
 	end
 	local r = run :: Run
 	local t = now()
+	if r.phase == "ride" then
+		startWreck(player, r, "crash") -- a crash hard enough to break a bone ends the ride
+	end
 	if impact < math.min(cfg.bones.seatImpact, cfg.bones.ejectSpeed) then
 		return reject(player, r, "soft bone")
 	end
@@ -719,6 +835,9 @@ local function sendScores(t: number)
 				comboUntil = s.comboUntil,
 				breaks = s.breaks,
 				bestMultiplier = s.bestMultiplier,
+				phase = run.phase,
+				meters = math.floor(run.distance * cfg.ride.metersPerStud),
+				ridePoints = run.ridePoints,
 			})
 		end
 	end
@@ -731,7 +850,7 @@ end
 
 local function onBoard(player: Player, board: string, tab: string)
 	local day = dayNumber()
-	local prefix = if board == "bones" then "HW_Bones" else "HW_Score"
+	local prefix = if board == "distance" then "HW_Dist" else "HW_Score"
 	local scope = if tab == "daily"
 		then Boards.modeScope(prefix, "D", day)
 		else Boards.modeScope(prefix, "W", Quests.weekOf(day))
@@ -814,6 +933,10 @@ function HighwayService.init()
 	Workspace:SetAttribute("HavocGoal", cfg.meter.goal)
 
 	VehicleService.onJoin = onJoin
+	-- Co-op: each ride's traffic is its own, so other players' cars are ghosts (versus cars are solid)
+	VehicleService.collisionGroupFor = function(_player: Player): string?
+		return if versus then nil else "Ghost"
+	end
 	VehicleService.equipLocked = function(player: Player): boolean
 		return active(runs[player])
 	end
@@ -836,10 +959,12 @@ function HighwayService.init()
 		end
 		local decoded = DamageModel.decode(state)
 		if decoded and bit32.band(decoded.flags, DamageModel.FLAG_EXPLODED) ~= 0 then
-			(run :: Run).ending = true
-			task.delay(1.5, function()
-				finishRun(player, "wrecked")
-			end)
+			local r = run :: Run
+			if r.phase == "ride" then
+				startWreck(player, r, "boom")
+			end
+			-- Blown up: Wreck Mode keeps going a few seconds for the flying wreckage, then the results
+			r.wreckEndsAt = math.min(r.wreckEndsAt, now() + 4)
 		end
 	end)
 	DataService.Leaving:Connect(onLeaving)
@@ -877,7 +1002,15 @@ function HighwayService.init()
 		clock = 0
 		local t = now()
 		for player, run in runs do
-			if not run.over and not run.ending and t >= run.endsAt then
+			if run.over or run.ending then
+				continue
+			end
+			if run.phase == "ride" then
+				stepRide(player, run, t)
+			end
+			if t >= run.wreckEndsAt then
+				finishRun(player, "wrecked")
+			elseif t >= run.endsAt then
 				finishRun(player, "timer")
 			end
 		end

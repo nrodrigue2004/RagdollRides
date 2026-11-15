@@ -7,7 +7,7 @@
 --   Fewer flashes on, the rider glows instead (HighwayClient).
 -- * Results card: score, bones, best combo, pile-ups, coins, the daily Havoc target bar, personal best,
 --   RIDE AGAIN (after 2 s) and LEAVE, plus TOP for the boards.
--- * Boards panel: DESTRUCTION or BONE-BREAKS, each with FRIENDS, TODAY (the day's event) and THIS WEEK.
+-- * Boards panel: SCORE or DISTANCE (meters), each with FRIENDS, TODAY (the day's event) and THIS WEEK.
 -- Text is ours only, apart from Roblox display names. PLACEHOLDER ART: flat cards, a frame skeleton.
 
 local TweenService = game:GetService("TweenService")
@@ -162,6 +162,10 @@ end
 
 export type RunView = {
 	timeLeft: number,
+	phase: string?, -- "ride" (distance) or "wreck" (Wreck Mode countdown)
+	meters: number?,
+	speedX: number?, -- the ride's distance multiplier now (1 to 3)
+	wreckLeft: number?,
 	score: number,
 	multiplier: number,
 	comboLeft: number, -- 0 to 1 of the 3 s window left
@@ -252,8 +256,19 @@ function HighwayHud.run(parent: Instance, view: RunView?)
 		end)
 	end
 	local l = labels
-	l.timer.Text = clock(view.timeLeft)
-	l.timer.TextColor3 = if view.timeLeft <= 10 then CORAL else WHITE
+	if view.phase == "wreck" then
+		l.timer.Text = string.format("WRECK MODE  %d", math.ceil(math.max(0, view.wreckLeft or 0)))
+		l.timer.TextColor3 = CORAL
+	elseif view.phase == "ride" then
+		local x = view.speedX or 1
+		l.timer.Text = HighwayHud.commas(view.meters or 0)
+			.. " m"
+			.. (if x > 1 then "   SPEED x" .. x else "")
+		l.timer.TextColor3 = if x >= 3 then Color3.fromRGB(255, 120, 200) elseif x >= 2 then GOLD else WHITE
+	else
+		l.timer.Text = clock(view.timeLeft)
+		l.timer.TextColor3 = if view.timeLeft <= 10 then CORAL else WHITE
+	end
 	l.score.Text = HighwayHud.commas(view.score)
 	if view.score > l.lastScore then
 		l.scoreScale.Scale = 1.15
@@ -271,6 +286,7 @@ function HighwayHud.run(parent: Instance, view: RunView?)
 	l.comboBack.Visible = view.comboLeft > 0
 	l.comboFill.Size = UDim2.fromScale(math.clamp(view.comboLeft, 0, 1), 1)
 	l.comboFill.BackgroundColor3 = COMBO_COLORS[m]
+	l.crack.Visible = view.phase ~= "ride"
 	l.crack.Text = string.format("%s %d / %d", cfg.counterLabel, view.breaks, cfg.bones.total)
 	l.crack.TextColor3 = if view.breaks > 0 then Color3.fromRGB(255, 240, 200) else WHITE
 	l.meterBack.Visible = not view.tutorial
@@ -282,6 +298,40 @@ function HighwayHud.run(parent: Instance, view: RunView?)
 	else
 		l.chip.Text = ""
 	end
+end
+
+-- BOOM: Wreck Mode's one-time button (also G, or RB on a gamepad). nil hides it.
+local boomButton: TextButton? = nil
+function HighwayHud.boom(parent: Instance, onPress: (() -> ())?)
+	if onPress == nil then
+		if boomButton then
+			boomButton:Destroy()
+			boomButton = nil
+		end
+		return
+	end
+	local g = ensureGui(parent)
+	if boomButton then
+		boomButton:Destroy()
+	end
+	local b = button(g, "Boom", "BOOM!", CORAL)
+	b.AnchorPoint = Vector2.new(1, 1)
+	b.Position = UDim2.new(1, -24, 0.62, 0)
+	b.SizeConstraint = Enum.SizeConstraint.RelativeYY
+	b.Size = UDim2.fromScale(0.16, 0.16)
+	corner(b, 0.5)
+	local size = Instance.new("UISizeConstraint")
+	size.MinSize = Vector2.new(Config.UI.minTapTarget, Config.UI.minTapTarget)
+	size.Parent = b
+	local scale = Instance.new("UIScale")
+	scale.Parent = b
+	TweenService:Create(
+		scale,
+		TweenInfo.new(0.45, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+		{ Scale = 1.12 }
+	):Play()
+	b.Activated:Connect(onPress)
+	boomButton = b
 end
 
 ---------------------------------------------------------------------------
@@ -450,6 +500,11 @@ export type ResultView = {
 	chestLine: string?,
 	tutorial: boolean,
 	line: string?,
+	meters: number?, -- the ride
+	bestMeters: number?,
+	newBestMeters: boolean?,
+	ridePoints: number?,
+	wreckPoints: number?,
 }
 export type ResultActions = {
 	onAgain: () -> (),
@@ -549,12 +604,19 @@ function HighwayHud.showResults(parent: Instance, view: ResultView, actions: Res
 	best.Position = UDim2.fromScale(0.05, 0.27)
 	best.Size = UDim2.fromScale(0.9, 0.06)
 	-- Four stat tiles
-	local stats = {
-		{ "BONES", string.format("%d / %d", view.bones, cfg.bones.total) },
-		{ "BEST COMBO", "x" .. view.bestMultiplier },
-		{ "PILE-UPS", tostring(view.pileups) },
-		{ "COINS", "+" .. view.coins },
-	}
+	local stats = if view.meters
+		then {
+			{ "DISTANCE", HighwayHud.commas(view.meters) .. " m" },
+			{ "WRECK", "+" .. HighwayHud.commas(view.wreckPoints or 0) },
+			{ "BONES", string.format("%d / %d", view.bones, cfg.bones.total) },
+			{ "COINS", "+" .. view.coins },
+		}
+		else {
+			{ "BONES", string.format("%d / %d", view.bones, cfg.bones.total) },
+			{ "BEST COMBO", "x" .. view.bestMultiplier },
+			{ "PILE-UPS", tostring(view.pileups) },
+			{ "COINS", "+" .. view.coins },
+		}
 	for i, stat in stats do
 		local tile = Instance.new("Frame")
 		tile.Name = stat[1]
@@ -573,6 +635,11 @@ function HighwayHud.showResults(parent: Instance, view: ResultView, actions: Res
 	end
 	-- Notes: capped coins, a flagged run, the chest
 	local notes = {}
+	if view.newBestMeters then
+		table.insert(notes, "Your furthest ride yet!")
+	elseif view.bestMeters and view.bestMeters > 0 then
+		table.insert(notes, "Furthest ride " .. HighwayHud.commas(view.bestMeters) .. " m.")
+	end
 	if view.line then
 		table.insert(notes, view.line)
 	end
@@ -630,7 +697,7 @@ function HighwayHud.showResults(parent: Instance, view: ResultView, actions: Res
 	top.Position = UDim2.fromScale(0.76, 0.81)
 	top.Size = UDim2.fromScale(0.19, 0.14)
 	local armed = false
-	task.delay(cfg.Run.resultsSkip, function()
+	task.delay(cfg.resultsSkip, function()
 		armed = true
 		again.BackgroundColor3 = GREEN
 	end)
@@ -660,13 +727,12 @@ export type BoardView = {
 	onTab: (tab: string) -> (),
 }
 
-local BOARDS = { { "score", "DESTRUCTION" }, { "bones", "BONE-BREAKS" } }
+local BOARDS = { { "score", "SCORE" }, { "distance", "DISTANCE" } }
 local TABS = { { "friends", "FRIENDS" }, { "daily", "TODAY" }, { "weekly", "THIS WEEK" } }
 
 local function valueText(board: string, value: number): string
-	if board == "bones" then
-		local breaks = value // 1e6
-		return string.format("%d bones, %s", breaks, HighwayHud.commas(value - breaks * 1e6))
+	if board == "distance" then
+		return HighwayHud.commas(value) .. " m"
 	end
 	return HighwayHud.commas(value)
 end

@@ -1071,7 +1071,23 @@ Config.Brawl = {
 ---------------------------------------------------------------------------
 Config.Highway = {
 	maxPlayers = 8,
-	runLength = 210,
+	runLength = 1200, -- safety only: a ride ends after 20 minutes (the ride itself has no timer)
+	-- Ride then Wreck (nate, 2026-11-15: "like Traffic Rider: go as far as you can without crashing, it gets
+	-- harder, and once you crash it's a destruction game"). All (tune).
+	ride = {
+		crashImpact = 22, -- a traffic hit this hard ends the ride (lighter is a scrape); so do a Huge crash,
+		-- being thrown, a hard bump from a versus player and blowing up
+		wreckLength = 10, -- seconds of Wreck Mode after the crash: smash everything for points
+		boomRadius = 30, -- BOOM (once per wreck): blow your car up and send everything near it flying
+		idleLimit = 25, -- seconds without moving forward ends the ride
+		metersPerStud = 0.28,
+		pointsPerMeter = 1,
+		speedTiers = { { at = 0.9, x = 3 }, { at = 0.7, x = 2 } }, -- distance points x2 / x3 near top speed
+		-- Traffic thickens the further you get: the share of empty slots goes from start to finish over
+		-- the first `over` studs of the ride
+		density = { start = 0.6, finish = 0.12, over = 9000 },
+		maxProgress = 1.35, -- the server's check: forward progress at most 1.35 x top speed (+30 studs/s)
+	},
 	startSpeed = 50, -- you join already moving
 	resultsSkip = 2, -- the results card can be skipped after this
 	-- Road (built on each device from the server's seed; Shared/HighwayMath)
@@ -1090,7 +1106,7 @@ Config.Highway = {
 		maxS = 40000, -- past this a new run starts back at the beginning (keeps far-from-origin physics sane)
 	},
 	ramps = { grid = 425, jitter = 37, rampDayGrid = 200, length = 34, height = 7, lanes = 2 },
-	wrench = { every = 900, heal = 30, radius = 6 },
+	wrench = { every = 0, heal = 30, radius = 6 }, -- 0: no Pit Wrenches (the ride ends at the first crash)
 	-- Traffic: deterministic from the seed and server time, so every device sees the same cars
 	traffic = {
 		count = 16, -- pooled cars around each player
@@ -1177,7 +1193,7 @@ Config.Highway = {
 		speedMax = 2.5,
 		comboWindow = 3,
 		comboSteps = { 2, 4, 7, 11, 16, 22, 30 }, -- x2 at 2 hits ... x8 at 30
-		nearMiss = { points = 25, gap = 2, speed = 70 },
+		nearMiss = { points = 150, gap = 2, speed = 70 }, -- the ride's big bonus: pass close at speed
 		air = { points = 25, every = 0.5, maxSeconds = 6 },
 		flip = { points = 300, max = 3 },
 		chain = { 0.5, 0.25, 0.125 },
@@ -1213,17 +1229,17 @@ Config.Highway = {
 	rejectLimit = 6,
 	packBehind = 120, -- a new run starts this far behind the last car on the road
 	versusUnlockRuns = 2,
-	-- First run (tut.highway): a quiet road of its own, 3 soft compacts ahead, a ramp, SMASH!
+	-- First run (tut.highway): a quiet road of its own, one slow car ahead to steer around, a ramp
 	tutorial = {
-		length = 90,
+		length = 1200,
 		origin = { 6000, 0, 0 }, -- each first-timer gets a quiet copy of the road out here
 		spacing = 220, -- studs between first-timers' copies
 		lanes = 2,
 		quiet = 3, -- traffic 3 times thinner
-		cars = { 140, 175, 210 }, -- the 3 compacts, this far ahead in your lane
+		cars = { 260 }, -- a slow compact this far ahead in your lane: steer around it
 		carSpeed = 30,
 		rampAt = 650,
-		bumpAt = 20, -- the scripted bump that breaks the first bone, if none broke yet
+		bumpAt = math.huge, -- no scripted bump any more (the ride ends at your first crash)
 	},
 	-- Daily events (UTC weekday; announced by Highway Hal)
 	events = {

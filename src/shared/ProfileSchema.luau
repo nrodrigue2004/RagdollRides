@@ -79,6 +79,7 @@ function ProfileSchema.default(): { [string]: any }
 			highwayRuns = 0,
 			bestHighway = 0,
 			bestBones = 0,
+			bestDistance = 0, -- Highway: the furthest ride, in meters
 			pileups = 0,
 			mapsPublished = 0,
 			playSeconds = 0,
@@ -374,6 +375,7 @@ function ProfileSchema.clientView(profile: { [string]: any }, now: number?): { [
 		highwayRuns = profile.stats.highwayRuns or 0,
 		bestHighway = profile.stats.bestHighway or 0,
 		bestBones = profile.stats.bestBones or 0,
+		bestDistance = profile.stats.bestDistance or 0,
 		havocToday = profile.daily.havoc or 0,
 		havocChest = profile.daily.havocChest == true,
 		ranked = {

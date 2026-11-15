@@ -331,4 +331,29 @@ function Score.noteBreak(clock: BreakClock, now: number, limits: BreakLimits)
 	clock.last = now
 end
 
+---------------------------------------------------------------------------
+-- The ride (before the crash): points for distance, more near top speed
+---------------------------------------------------------------------------
+
+export type RideConfig = {
+	metersPerStud: number,
+	pointsPerMeter: number,
+	speedTiers: { { at: number, x: number } },
+}
+
+-- The distance multiplier at this fraction of your car's top speed
+function Score.speedTier(fraction: number, cfg: RideConfig): number
+	for _, tier in cfg.speedTiers do
+		if fraction >= tier.at then
+			return tier.x
+		end
+	end
+	return 1
+end
+
+-- Points for driving `studs` forward at `fraction` of top speed (whole points; the rest carries over)
+function Score.ridePoints(studs: number, fraction: number, cfg: RideConfig): number
+	return math.max(0, studs) * cfg.metersPerStud * cfg.pointsPerMeter * Score.speedTier(fraction, cfg)
+end
+
 return Score

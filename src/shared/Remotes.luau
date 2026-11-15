@@ -372,7 +372,7 @@ local Remotes: { [string]: RemoteDef } = {
 	["Highway.Trick"] = {
 		dir = "C2S",
 		schema = {
-			{ t = "string", oneOf = { "near", "air", "flip" } },
+			{ t = "string", oneOf = { "near", "air", "flip", "crash" } }, -- crash: the ride ended (Wreck Mode)
 			{ t = "integer" },
 			{ t = "number", min = 0, max = 300 },
 		},
@@ -393,7 +393,7 @@ local Remotes: { [string]: RemoteDef } = {
 	["Highway.Board"] = {
 		dir = "C2S",
 		schema = {
-			{ t = "string", oneOf = { "score", "bones" } },
+			{ t = "string", oneOf = { "score", "distance" } },
 			{ t = "string", oneOf = { "friends", "daily", "weekly" } },
 		},
 		rate = 1,

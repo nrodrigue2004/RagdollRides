@@ -16,8 +16,11 @@
 -- * Thrown riders climb back into the car where it is (1.5 s); meanwhile it holds its lane at 50.
 -- * Pit Wrenches heal 30 and put one lost wheel back. RESET goes to your lane, where you are.
 -- * Co-op: other players' cars do no damage; versus: bumping them scores.
--- * The tutorial lane (first run): a quiet road of your own with 3 soft cars to smash, and a bump at
---   20 s that breaks your first bone if nothing has yet.
+-- * Ride then Wreck (nate, 2026-11-15): the ride scores distance (more near top speed) and near misses
+--   while traffic thickens; a scrape is fine, but a traffic hit at I 22+, a Huge crash, being thrown or a
+--   hard versus bump ends it (Highway.Trick "crash"). Then 10 s of Wreck Mode: smash everything, and
+--   BOOM once (G, RB or the button) to blow the car up and throw everything near it.
+-- * The tutorial lane (first run): a quiet road of your own with one slow car to steer around.
 -- * Results, RIDE AGAIN, LEAVE (HUB) and the boards (TOP).
 
 local HttpService = game:GetService("HttpService")
@@ -67,13 +70,18 @@ type RunState = {
 	near: { [number]: boolean },
 	props: { [number]: boolean },
 	over: boolean,
-	bumped: boolean,
 	lastRoadS: number,
 	checkpointTimer: number,
 	air: number,
 	spin: number,
 	clip: Clip.Recorder,
 	clipping: boolean,
+	opts: HighwayMath.TrafficOpts,
+	phase: string, -- "ride" or "wreck"
+	wreckEndsAt: number,
+	boomUsed: boolean,
+	meters: number,
+	lastSpeedX: number,
 }
 
 local seed: { seed: number, epoch: number, event: string?, versus: boolean }? = nil
@@ -157,8 +165,7 @@ local function report(kind: number, id: number, impact: number, link: number, po
 	impact = math.clamp(impact, 0, scfg.maxImpact)
 	local base = 0
 	if kind == 0 then
-		local car =
-			HighwayMath.car(r.def, id, now() - (seed :: any).epoch, cfg.traffic, { event = r.event :: any })
+		local car = HighwayMath.car(r.def, id, now() - (seed :: any).epoch, cfg.traffic, r.opts)
 		base = if car then car.kind.base else 0
 	elseif kind == 1 then
 		if r.props[id] then
@@ -365,6 +372,44 @@ local function watchRider()
 end
 
 ---------------------------------------------------------------------------
+-- The crash and Wreck Mode
+---------------------------------------------------------------------------
+
+local boom: () -> ()
+
+-- The ride is over: Wreck Mode starts here at once (the server confirms with "wreckStart")
+local function crash(why: string)
+	local r = run
+	if r == nil or r.over or r.phase ~= "ride" then
+		return
+	end
+	r.phase = "wreck"
+	r.wreckEndsAt = now() + cfg.ride.wreckLength
+	if why ~= "traffic" then
+		send("Highway.Trick", "crash", 0, 0)
+	end
+	HighwayHud.banner(playerGui(), "WRECK MODE!", "Smash everything you can!", Color3.fromRGB(255, 120, 90))
+	controllers.Camera.shake(0.8, 0.4)
+	HighwayHud.boom(playerGui(), boom)
+end
+
+-- BOOM: once per wreck, the car blows up and throws everything near it
+boom = function()
+	local r = run
+	local chassis = myChassis()
+	if r == nil or r.over or r.phase ~= "wreck" or r.boomUsed or chassis == nil then
+		return
+	end
+	r.boomUsed = true
+	HighwayHud.boom(playerGui(), nil)
+	controllers.Damage.detonate()
+	if r.traffic then
+		Traffic.boom(r.traffic, chassis.Position, cfg.ride.boomRadius)
+	end
+	controllers.Camera.pull(0.8, 1.6)
+end
+
+---------------------------------------------------------------------------
 -- Hits from your car
 ---------------------------------------------------------------------------
 
@@ -387,8 +432,19 @@ local function onImpact(info: { [string]: any })
 	end
 	local other = info.other :: BasePart?
 	local versus = seed ~= nil and seed.versus
+	local riding = r.phase == "ride"
 	if other then
 		local rig = r.traffic and Traffic.rigOf(r.traffic, other)
+		if rig and rig.id and riding and info.impact < cfg.ride.crashImpact then
+			-- A scrape: the car gets a nudge, the ride goes on
+			Traffic.hit(r.traffic :: Traffic.Pool, rig, info.impact, 0, false)
+			HighwayHud.pop(playerGui(), "SCRAPE!", Color3.fromRGB(255, 240, 200), info.point, 0.04)
+			controllers.Camera.shake(0.3, 0.2)
+			return
+		end
+		if rig and rig.id and riding then
+			crash("traffic")
+		end
 		if rig and rig.id then
 			Traffic.hit(r.traffic :: Traffic.Pool, rig, info.impact, 0, true)
 			report(if rig.tutorial then 3 else 0, rig.id, info.impact, 0, info.point)
@@ -402,9 +458,19 @@ local function onImpact(info: { [string]: any })
 				if not versus then
 					return -- co-op: bumping a friend does nothing
 				end
+				if riding then
+					if info.impact >= cfg.ride.crashImpact then
+						crash("player")
+					end
+					return
+				end
 				report(2, owner, info.impact, 0, info.point)
 			end
 		end
+	end
+	-- A Huge crash into anything (a wall, a ramp, the ground) ends the ride
+	if riding and info.tier == "HugeCrash" and info.side ~= "Bottom" then
+		crash("crash")
 	end
 	-- Bones in the seat
 	if
@@ -441,7 +507,7 @@ end
 
 local function checkNearMisses(r: RunState, chassis: BasePart)
 	local pool = r.traffic
-	if pool == nil or r.tutorial then
+	if pool == nil or r.phase ~= "ride" then
 		return
 	end
 	local speed = chassis.AssemblyLinearVelocity.Magnitude
@@ -552,7 +618,7 @@ local function autopilot(_dt: number)
 	local localAhead = chassis.CFrame:PointToObjectSpace(ahead)
 	local steer = math.clamp(localAhead.X / 12, -1, 1)
 	local speed = -chassis.CFrame:VectorToObjectSpace(chassis.AssemblyLinearVelocity).Z
-	local want = cfg.Run.startSpeed
+	local want = cfg.startSpeed
 	return {
 		throttle = if speed < want then 0.7 else 0,
 		brake = if speed > want + 15 then 0.3 else 0,
@@ -566,7 +632,7 @@ end
 local function makeTraffic(r: RunState, chassis: BasePart)
 	local epoch = (seed :: any).epoch
 	r.traffic = Traffic.new(r.def, {
-		opts = if r.tutorial then { quiet = cfg.tutorial.quiet } else { event = r.event :: any },
+		opts = r.opts,
 		epoch = epoch,
 		tutorial = if r.tutorial then { s0 = r.s0, startAt = r.startAt, lane = r.lane } else nil,
 		refMass = chassis.AssemblyMass,
@@ -613,7 +679,7 @@ local function makeTraffic(r: RunState, chassis: BasePart)
 					label.Size = UDim2.fromScale(1, 1)
 					label.Font = Enum.Font.FredokaOne
 					label.TextScaled = true
-					label.Text = "SMASH!"
+					label.Text = "DODGE!"
 					label.TextColor3 = Color3.fromRGB(255, 205, 40)
 					label.TextStrokeTransparency = 0
 					label.Parent = tag
@@ -639,7 +705,7 @@ local function onSpawned(model: Model)
 	chassisTouch = chassis.Touched:Connect(onChassisTouched)
 	-- Already rolling at 50 studs/s, in your lane
 	local cf = laneFrame(r, r.s0, r.lane) + Vector3.new(0, controllers.Vehicle.rideHeight() + 0.3, 0)
-	controllers.Vehicle.placeAt(cf, cf.LookVector * cfg.Run.startSpeed)
+	controllers.Vehicle.placeAt(cf, cf.LookVector * cfg.startSpeed)
 	controllers.Vehicle.setCheckpoint(laneFrame(r, r.s0, r.lane), 0)
 	if r.traffic == nil then
 		makeTraffic(r, chassis)
@@ -664,6 +730,13 @@ local function onStart(msg: { [string]: any })
 	local extra = if tutorial then { { index = -1, s = msg.s + cfg.tutorial.rampAt, lane = 1 } } else nil
 	local builder = Road.new(def, event :: any, extra)
 	Road.update(builder, msg.s)
+	local opts = HighwayMath.runOpts(
+		event :: any,
+		if tutorial then cfg.tutorial.quiet else nil,
+		msg.s,
+		msg.t0 or (msg.startAt - seed.epoch),
+		cfg.ride.density
+	)
 	run = {
 		id = msg.run,
 		def = def,
@@ -681,21 +754,29 @@ local function onStart(msg: { [string]: any })
 		near = {},
 		props = {},
 		over = false,
-		bumped = false,
 		lastRoadS = msg.s,
 		checkpointTimer = 0,
 		air = 0,
 		spin = 0,
 		clip = Clip.newRecorder(),
 		clipping = false,
+		opts = opts,
+		phase = "ride",
+		wreckEndsAt = math.huge,
+		boomUsed = false,
+		meters = 0,
+		lastSpeedX = 1,
 	}
+	HighwayHud.boom(playerGui(), nil)
 	controllers.Vehicle.setKillY(def.origin[2] - 40)
 	if tutorial then
-		TracksHud.showCue("SMASH THE CARS!", 2)
-		TracksHud.toast("Crash into cars for points. Keep hitting for a combo!", 4)
+		TracksHud.showCue("DODGE THE TRAFFIC!", 2)
+		TracksHud.toast("Go as far as you can! When you crash, smash everything for points.", 5)
 	elseif event then
 		TracksHud.showCue(event.name, 1.6)
 		TracksHud.toast(event.line, 3)
+	else
+		TracksHud.showCue("GO AS FAR AS YOU CAN!", 1.6)
 	end
 	controllers.Juice.fire("Finish", { volume = 0.4 })
 	-- The car may be there already (Ride again keeps it)
@@ -717,11 +798,31 @@ local function onScore(msg: { [string]: any })
 	m.comboUntil = if msg.combo > 0 then msg.comboUntil else -math.huge
 	m.breaks = msg.breaks
 	m.bestMultiplier = msg.bestMultiplier
+	r.meters = msg.meters or r.meters
+	if msg.phase == "wreck" and r.phase == "ride" then
+		crash("server")
+	end
 end
 
 local function onEvent(e: { [string]: any })
 	local kind = e.kind
-	if kind == "bone" then
+	if kind == "wreckStart" then
+		local r = run
+		if r and e.run == r.id then
+			if r.phase == "ride" then
+				crash("server")
+			end
+			r.wreckEndsAt = e.endsAt or r.wreckEndsAt
+			r.meters = e.meters or r.meters
+			HighwayHud.pop(
+				playerGui(),
+				string.format("%s m ridden!", HighwayHud.commas(r.meters)),
+				Color3.fromRGB(110, 200, 255),
+				nil,
+				0.05
+			)
+		end
+	elseif kind == "bone" then
 		onBone(e)
 	elseif kind == "pileStart" then
 		HighwayHud.pop(playerGui(), "PILE-UP BUILDING!", Color3.fromRGB(255, 180, 60), nil, 0.05)
@@ -761,7 +862,7 @@ local function onEvent(e: { [string]: any })
 end
 
 local TITLES = {
-	timer = "TIME!",
+	timer = "WHAT A RIDE!",
 	fullCrack = "FULL CRACK!",
 	wrecked = "WRECKED!",
 	left = "RUN OVER",
@@ -915,6 +1016,11 @@ local function showResults(msg: { [string]: any })
 		target = msg.target,
 		chestLine = chestLine,
 		tutorial = msg.tutorial,
+		meters = msg.meters,
+		bestMeters = msg.bestMeters,
+		newBestMeters = msg.newBestMeters,
+		ridePoints = msg.ridePoints,
+		wreckPoints = msg.wreckPoints,
 		line = if msg.tutorial
 			then "Now for real: the full highway, with everyone!"
 			elseif msg.challenge and msg.challenge.beaten then string.format(
@@ -958,6 +1064,7 @@ local function onEnd(msg: { [string]: any })
 	end
 	r.over = true
 	lastResult = msg
+	HighwayHud.boom(playerGui(), nil)
 	controllers.Juice.fire("RunOver")
 	controllers.Shop.close()
 	local delay = if msg.reason == "fullCrack" then 0.2 else 0.6
@@ -1004,26 +1111,29 @@ local function step(dt: number)
 	if not r.over then
 		checkNearMisses(r, chassis)
 		checkAir(r, dt)
-		-- Tutorial: a bump at 20 s breaks your first bone if nothing has yet
-		if r.tutorial and not r.bumped and t - r.startAt >= cfg.tutorial.bumpAt then
-			r.bumped = true
-			if r.mirror.breaks == 0 and controllers.Vehicle.isDriverPresent() then
-				TracksHud.showCue("BONK!", 1)
-				controllers.Vehicle.applyKick(Vector3.new(0, 25, 0), chassis.CFrame.LookVector * 3)
-				controllers.Vehicle.ejectRider(20)
-				send("Bone.Break", 2, cfg.bones.seatImpact)
-				task.delay(1.6, function()
-					if run == r then
-						TracksHud.toast("Crashes break bones: more breaks, more points!", 3)
-					end
-				end)
-			end
+		-- BOOM from the keyboard or a gamepad (G, RB); the button does the same
+		if controllers.Input.consume("action") and r.phase == "wreck" then
+			boom()
 		end
+		-- The ride's speed multiplier (the server measures the same from your progress)
+		local state = controllers.Vehicle.getState()
+		local top = state and state.class.topSpeed or 100
+		local speedX = if r.phase == "ride"
+			then Score.speedTier(math.max(0, state and state.forwardSpeed or 0) / top, cfg.ride)
+			else 1
+		if speedX > r.lastSpeedX and r.phase == "ride" then
+			HighwayHud.pop(playerGui(), "SPEED x" .. speedX, Color3.fromRGB(255, 205, 40), nil, 0.04)
+		end
+		r.lastSpeedX = speedX
 		local mirror = r.mirror
 		local left = math.max(0, mirror.comboUntil - t)
 		local meterGoal = Workspace:GetAttribute("HavocGoal") or cfg.meter.goal
 		HighwayHud.run(playerGui(), {
 			timeLeft = r.endsAt - t,
+			phase = r.phase,
+			meters = r.meters,
+			speedX = speedX,
+			wreckLeft = r.wreckEndsAt - t,
 			score = mirror.score,
 			multiplier = Score.currentMultiplier(mirror, t, scfg),
 			comboLeft = if Score.comboAlive(mirror, t) then left / scfg.comboWindow else 0,
@@ -1080,10 +1190,13 @@ function HighwayClient.start()
 		-- A RESET: back in your lane at speed
 		local chassis = myChassis()
 		if chassis and run then
-			controllers.Vehicle.placeAt(chassis.CFrame, chassis.CFrame.LookVector * cfg.Run.startSpeed)
+			controllers.Vehicle.placeAt(chassis.CFrame, chassis.CFrame.LookVector * cfg.startSpeed)
 		end
 	end)
-	controllers.Ragdoll.Ejected:Connect(watchRider)
+	controllers.Ragdoll.Ejected:Connect(function()
+		watchRider()
+		crash("thrown")
+	end)
 	controllers.Ragdoll.Respawned:Connect(clearRiderTouches)
 	-- Co-op: other players' cars do no damage (versus keeps it)
 	controllers.Damage.setImpactFilter(function(info): boolean

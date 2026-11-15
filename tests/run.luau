@@ -1988,8 +1988,12 @@ test("highway: ramps, wrenches, props and events", function()
 	end
 	local rampDay = HighwayMath.rampsBetween(road, 0, 2000, cfg.ramps, cfg.events[5])
 	check(#rampDay == 10 and rampDay[1].s == 200, "ramp day: every 200")
-	local wrenches = HighwayMath.wrenchesBetween(road, 0, 9000, cfg.wrench.every)
+	local wrenches = HighwayMath.wrenchesBetween(road, 0, 9000, 900)
 	check(#wrenches == 10 and wrenches[1].s == 450 and wrenches[2].s == 1350, "a wrench every 900")
+	check(
+		#HighwayMath.wrenchesBetween(road, 0, 9000, cfg.wrench.every) == 0,
+		"Ride then Wreck: no Pit Wrenches"
+	)
 	local props = HighwayMath.propsBetween(road, 0, 4000, cfg.props)
 	check(#props > 60, "props line the road")
 	for _, p in props do
@@ -2005,6 +2009,46 @@ test("highway: ramps, wrenches, props and events", function()
 	check(HighwayMath.startS({}, 120, 40000) == 0, "empty road starts at 0")
 	check(HighwayMath.startS({ 3000, 1500 }, 120, 40000) == 1380, "behind the last car")
 	check(HighwayMath.startS({ 50000 }, 120, 40000) == 0, "too far out starts over")
+end)
+
+test("highway: Ride then Wreck (traffic thickens, distance points)", function()
+	local cfg = Config.Highway
+	local road = HighwayMath.road(4321, cfg.road)
+	local d = cfg.ride.density
+	-- The ride starts at s 2000 at road time 500; ahead of you the road fills up as you go
+	local opts = HighwayMath.runOpts(nil, nil, 2000, 500, d)
+	local nearCount = #HighwayMath.carsBetween(road, 2000, 4000, 500, cfg.traffic, opts)
+	local farCount = #HighwayMath.carsBetween(road, 2000 + d.over, 4000 + d.over, 500, cfg.traffic, opts)
+	check(nearCount > 0 and farCount > nearCount * 1.6, "the road ahead gets busier")
+	-- A slot's car never pops in or out during the ride: the same car at any later time
+	for id = 1, 400 do
+		local a = HighwayMath.car(road, id, 500, cfg.traffic, opts)
+		local b = HighwayMath.car(road, id, 560, cfg.traffic, opts)
+		check((a == nil) == (b == nil), "slots keep their car through the ride")
+	end
+	local tutorial = HighwayMath.runOpts(nil, cfg.tutorial.quiet, 0, 0, d)
+	check(tutorial.quiet == cfg.tutorial.quiet and tutorial.ramp ~= nil, "tutorial keeps its quiet road")
+	-- Speed tiers and distance points
+	local ride = cfg.ride
+	check(
+		Score.speedTier(0.5, ride) == 1
+			and Score.speedTier(0.75, ride) == 2
+			and Score.speedTier(0.95, ride) == 3,
+		"x1, x2 at 70%, x3 at 90%"
+	)
+	near(
+		Score.ridePoints(100, 0.5, ride),
+		100 * ride.metersPerStud * ride.pointsPerMeter,
+		1e-9,
+		"points per meter"
+	)
+	near(
+		Score.ridePoints(100, 0.95, ride),
+		300 * ride.metersPerStud * ride.pointsPerMeter,
+		1e-9,
+		"x3 near top speed"
+	)
+	check(Score.ridePoints(-50, 1, ride) == 0, "no points backwards")
 end)
 
 test("highway: destruction score, combos, chains and pile-ups", function()
@@ -2035,7 +2079,7 @@ test("highway: destruction score, combos, chains and pile-ups", function()
 	check(Score.hit(run, 1, 75, 40, 0, cfg) == 150, "second hit x2")
 	check(run.bestMultiplier == 2, "best multiplier")
 	-- A near miss keeps it alive past 3 s from the last hit
-	check(Score.nearMiss(run, 3.5, cfg) == 25, "near miss 25")
+	check(Score.nearMiss(run, 3.5, cfg) == 150, "near miss 150")
 	check(Score.hit(run, 6, 75, 40, 0, cfg) == 150, "combo kept alive by the near miss (3 hits: x2)")
 	-- A chain hit pays 50% at the current combo and does not step it
 	check(Score.hit(run, 6.5, 100, 40, 1, cfg) == 100, "chain link 1: 100 x 2 x 0.5")

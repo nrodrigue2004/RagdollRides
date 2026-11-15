@@ -6,10 +6,11 @@
 - Milestones 5 and 6 code: shop, garage, mastery, rebirth, passes and products (ids still 0), quests, chest, streak, gifts; Tumble Park hub, mode picker, rounds, quick races, parties, map boards.
 - Milestones 7 and 8 code: Bumper Brawl (Cinder Cove casual and ranked) and Highway Havoc (Sunny Pass co-op and versus).
 - Milestone 9 code: analytics and funnels, audio mix, the rest of the juice table, Highway Clip and Beat my score, Wobble Bot loading screen, emote wheel. Version 1.0.0-m9.
+- Playtest 1 fixes (2026-11-15): Tracks damage is looks only, smoother camera, slower respawn, all modes open, paint flicker fixed, lighting pass. Highway Havoc redesigned as Ride then Wreck (distance ride that gets harder, then 10 s of Wreck Mode with BOOM).
 - Tests pass, Selene clean, the 5 places build. GitHub push is blocked (403) until nate reconnects GitHub; work is committed locally and bundled in project files.
 
 ## In progress
-- nate's Studio checks for milestones 1 to 9 (Tasks.md "Studio test list").
+- nate's Studio checks for milestones 1 to 9 and the playtest 1 fixes (Tasks.md "Studio test list"); the Highway checks are rewritten for Ride then Wreck.
 
 ## Next
 - nate: work through `notes/Launch Checklist.md` (place ids, passes and products, sounds and music, art pass, questionnaire, icon and thumbnails, soft launch).

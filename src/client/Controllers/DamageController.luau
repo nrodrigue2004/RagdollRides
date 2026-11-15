@@ -420,6 +420,17 @@ function DamageController.heal(amount: number, remountOne: boolean?)
 	juice("Repair")
 end
 
+-- Blow our own car up now (Highway Wreck Mode's BOOM): the front is gone, the car explodes as from a fire
+function DamageController.detonate()
+	local o = own
+	if not o or o.damage.exploded then
+		return
+	end
+	o.damage.hp[DamageModel.FRONT] = 0
+	o.damage.exploded = true
+	explode(o)
+end
+
 -- An explosion this device made (a Highway traffic car): push and damage our car like any blast
 function DamageController.shockwave(position: Vector3)
 	shockwaveFrom(position)

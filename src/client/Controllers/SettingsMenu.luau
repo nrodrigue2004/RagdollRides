@@ -5,11 +5,12 @@
 -- "Fewer flashes" and "Effects" are saved now; the VFX pass reads them (notes/Tasks.md).
 
 local Players = game:GetService("Players")
-local SoundService = game:GetService("SoundService")
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Net = require(Shared.Net)
+
+local Mix = require(script.Parent.Parent.Fx.Mix)
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -85,14 +86,7 @@ local ROWS = {
 ---------------------------------------------------------------------------
 
 local function musicGroup(): SoundGroup
-	local group = SoundService:FindFirstChild("Music") :: SoundGroup?
-	if not group then
-		local g = Instance.new("SoundGroup")
-		g.Name = "Music"
-		g.Parent = SoundService
-		group = g
-	end
-	return group :: SoundGroup
+	return Mix.group("Music")
 end
 
 local function applySteerAssist()

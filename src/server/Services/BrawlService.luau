@@ -40,6 +40,7 @@ local ShopMath = require(Shared.ShopMath)
 local TracksMath = require(Shared.TracksMath)
 
 local Services = script.Parent
+local Analytics = require(Services.Analytics)
 local BrawlArena = require(Services.BrawlArena)
 local BrawlBots = require(Services.BrawlBots)
 local DataService = require(Services.DataService)
@@ -683,6 +684,9 @@ end
 function mode.start(r)
 	local d = r.data
 	d.goAt = now()
+	for _, player in r.players do
+		Analytics.modeStep(player, Analytics.MODE.roundStart)
+	end
 	d.nextPowerupAt = d.goAt + cfg.powerups.firstAt
 	for _, e in list() do
 		local chassis = chassisOf(e)
@@ -857,6 +861,7 @@ function mode.finish(r)
 			},
 			seconds = cfg.results,
 		})
+		Analytics.modeStep(player, Analytics.MODE.roundEnd)
 		pcall(function()
 			game:GetService("AnalyticsService"):LogCustomEvent(player, "brawl_round", place, {
 				[Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = tostring(e.kos),
@@ -1316,6 +1321,7 @@ function BrawlService.init()
 		local e = entrantOf(player)
 		if e and round:phase() == "Results" then
 			e.skipped = true
+			Analytics.modeStep(player, Analytics.MODE.requeue)
 		end
 	end)
 	Net.on("Brawl.Leave", function(player: Player)

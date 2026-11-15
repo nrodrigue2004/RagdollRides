@@ -66,6 +66,23 @@ function CameraController.freeze(duration: number)
 	frozenUntil = math.max(frozenUntil, os.clock() + duration)
 end
 
+-- Pull back: the follow distance grows by `amount` (0.5 = half again) and eases back over `duration`
+-- (a Highway pile-up shows the whole wreck)
+local pullAmount, pullStart, pullDuration = 0, 0, 1
+function CameraController.pull(amount: number, duration: number)
+	pullAmount, pullStart, pullDuration = amount, os.clock(), math.max(duration, 0.1)
+end
+
+local function pullFactor(): number
+	local t = (os.clock() - pullStart) / pullDuration
+	if t >= 1 or pullAmount <= 0 then
+		return 1
+	end
+	-- Out fast, back slowly
+	local shape = if t < 0.2 then t / 0.2 else 1 - (t - 0.2) / 0.8
+	return 1 + pullAmount * shape
+end
+
 -- Something else (the crash replay) drives the camera: override(dt) returns the camera CFrame and FOV.
 local override: ((number) -> (CFrame, number))? = nil
 function CameraController.setOverride(fn: ((number) -> (CFrame, number))?)
@@ -105,7 +122,7 @@ local function update(dt: number)
 	else
 		focus = chassis.Position
 		velocity = chassis.AssemblyLinearVelocity
-		distance, height = class.cameraDistance, class.cameraHeight
+		distance, height = class.cameraDistance * pullFactor(), class.cameraHeight * pullFactor()
 		-- Heading follows the car's nose, flattened; while reversing it holds still
 		local look = chassis.CFrame.LookVector
 		local flat = Vector3.new(look.X, 0, look.Z)

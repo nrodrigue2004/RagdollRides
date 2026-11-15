@@ -13,6 +13,7 @@
 -- * A failed hop (TeleportInitFailed) retries up to Config.Places.teleportRetries times, then tells
 --   the player (Notice "teleportFailed") and leaves them in the hub.
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
 
@@ -20,6 +21,7 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Net = require(Shared.Net)
 
+local Analytics = require(script.Parent.Analytics)
 local DataService = require(script.Parent.DataService)
 local PartyService = require(script.Parent.PartyService)
 
@@ -84,6 +86,7 @@ function TeleportHub.send(player: Player, modeName: string, chip: string): (bool
 	if modeName == "highway" and chip == "versus" and not TeleportHub.versusOpen(player) then
 		return false, "versusLocked"
 	end
+	Analytics.modeStep(player, Analytics.MODE.cardTap)
 	return hop(player, placeId, { mode = modeName, chip = chip })
 end
 
@@ -126,6 +129,43 @@ function TeleportHub.init()
 	Players.PlayerRemoving:Connect(function(player)
 		attempts[player] = nil
 	end)
+	-- A friend's Beat my score invite (Highway results): the score to beat is kept in the profile
+	local function readChallenge(player: Player)
+		local ok, joinData = pcall(function()
+			return player:GetJoinData()
+		end)
+		local launch = ok and type(joinData) == "table" and joinData.LaunchData
+		if type(launch) ~= "string" or #launch > 200 then
+			return
+		end
+		local okDecode, data = pcall(function()
+			return HttpService:JSONDecode(launch)
+		end)
+		if
+			not okDecode
+			or type(data) ~= "table"
+			or type(data.beat) ~= "number"
+			or type(data.by) ~= "number"
+		then
+			return
+		end
+		local profile = DataService.waitFor(player)
+		if profile == nil or data.by == player.UserId then
+			return
+		end
+		profile.flags.challengeScore = math.clamp(math.floor(data.beat), 0, 10000000)
+		profile.flags.challengeBy = math.floor(data.by)
+		DataService.changed(player)
+		if workspace:GetAttribute("Mode") ~= "Highway" then
+			Net.fire("Notice", player, "challenge")
+		end
+	end
+	Players.PlayerAdded:Connect(function(player)
+		task.spawn(readChallenge, player)
+	end)
+	for _, player in Players:GetPlayers() do
+		task.spawn(readChallenge, player)
+	end
 end
 
 return TeleportHub

@@ -27,6 +27,7 @@ local StarterMaps = require(Shared.StarterMaps)
 local TracksMath = require(Shared.TracksMath)
 
 local Services = script.Parent
+local Analytics = require(Services.Analytics)
 local DataService = require(Services.DataService)
 local EconomyService = require(Services.EconomyService)
 local HubService = require(Services.HubService)
@@ -171,6 +172,7 @@ function mode.start(round)
 	local def = round.data.def
 	round.data.goAt = workspace:GetServerTimeNow()
 	for _, player in round.players do
+		Analytics.modeStep(player, Analytics.MODE.roundStart)
 		TracksService.startRun(player, def.id)
 	end
 end
@@ -239,6 +241,7 @@ function mode.finish(round)
 				DataService.changed(player)
 			end
 			RaceService.Finished:Fire(player, placing.place, placing.dnf)
+			Analytics.modeStep(player, Analytics.MODE.roundEnd)
 			pcall(function()
 				game:GetService("AnalyticsService"):LogCustomEvent(player, "quick_race", placing.place, {
 					[Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = round.data.base,
@@ -297,7 +300,9 @@ function mode.cleanup(round)
 		if player.Parent == Players then
 			task.spawn(function()
 				TracksService.enterMap(player, HUB)
-				join(player)
+				if join(player) then
+					Analytics.modeStep(player, Analytics.MODE.requeue)
+				end
 			end)
 		end
 	end
@@ -333,6 +338,7 @@ local function onJoin(player: Player)
 	if not join(player) then
 		return
 	end
+	Analytics.modeStep(player, Analytics.MODE.cardTap)
 	if PartyService.inParty(player) and PartyService.isLeader(player) then
 		for _, member in party do
 			if member ~= player and TracksService.currentMap(member) == HUB then

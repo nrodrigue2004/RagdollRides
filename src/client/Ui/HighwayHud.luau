@@ -451,7 +451,13 @@ export type ResultView = {
 	tutorial: boolean,
 	line: string?,
 }
-export type ResultActions = { onAgain: () -> (), onLeave: () -> (), onBoard: () -> () }
+export type ResultActions = {
+	onAgain: () -> (),
+	onLeave: () -> (),
+	onBoard: () -> (),
+	onClip: (() -> ())?, -- nil: no clip this run
+	onChallenge: (() -> ())?, -- Beat my score (nil: not offered)
+}
 
 function HighwayHud.hideResults()
 	if resultsFrame then
@@ -462,6 +468,48 @@ end
 
 function HighwayHud.resultsOpen(): boolean
 	return resultsFrame ~= nil
+end
+
+-- Hide the card while the clip plays, then bring it back
+function HighwayHud.setResultsVisible(visible: boolean)
+	if resultsFrame then
+		resultsFrame.Visible = visible
+	end
+end
+
+-- A small panel over the clip: SHARE (when a capture is ready) and DONE
+function HighwayHud.clipBar(parent: Instance, onShare: (() -> ())?, onDone: (() -> ())?)
+	local g = ensureGui(parent)
+	local old = g:FindFirstChild("ClipBar")
+	if old then
+		old:Destroy()
+	end
+	if onShare == nil and onDone == nil then
+		return
+	end
+	local f = Instance.new("Frame")
+	f.Name = "ClipBar"
+	f.AnchorPoint = Vector2.new(0.5, 1)
+	f.Position = UDim2.fromScale(0.5, 0.95)
+	f.SizeConstraint = Enum.SizeConstraint.RelativeYY
+	f.Size = UDim2.fromScale(0.8, 0.1)
+	f.BackgroundTransparency = 1
+	f.Parent = g
+	local label = text(f, "Label", "BEST 10 SECONDS", WHITE)
+	label.Size = UDim2.fromScale(0.4, 1)
+	textStroke(label, 2)
+	if onShare then
+		local share = button(f, "Share", "SHARE", GOLD)
+		share.Position = UDim2.fromScale(0.42, 0)
+		share.Size = UDim2.fromScale(0.3, 1)
+		share.Activated:Connect(onShare)
+	end
+	if onDone then
+		local done = button(f, "Done", "DONE", WHITE)
+		done.Position = UDim2.fromScale(0.74, 0)
+		done.Size = UDim2.fromScale(0.26, 1)
+		done.Activated:Connect(onDone)
+	end
 end
 
 function HighwayHud.showResults(parent: Instance, view: ResultView, actions: ResultActions)
@@ -537,8 +585,8 @@ function HighwayHud.showResults(parent: Instance, view: ResultView, actions: Res
 		table.insert(notes, view.chestLine)
 	end
 	local note = text(card, "Note", table.concat(notes, "  "), INK)
-	note.Position = UDim2.fromScale(0.05, 0.54)
-	note.Size = UDim2.fromScale(0.9, 0.06)
+	note.Position = UDim2.fromScale(0.05, 0.53)
+	note.Size = UDim2.fromScale(0.9, 0.05)
 	-- The daily Havoc target
 	if not view.tutorial then
 		local targetLine = text(
@@ -551,23 +599,36 @@ function HighwayHud.showResults(parent: Instance, view: ResultView, actions: Res
 			),
 			INK
 		)
-		targetLine.Position = UDim2.fromScale(0.05, 0.62)
-		targetLine.Size = UDim2.fromScale(0.9, 0.055)
+		targetLine.Position = UDim2.fromScale(0.05, 0.585)
+		targetLine.Size = UDim2.fromScale(0.9, 0.05)
 		local back, fill = bar(card, "Target", GREEN)
-		back.Position = UDim2.fromScale(0.1, 0.685)
+		back.Position = UDim2.fromScale(0.1, 0.64)
 		back.Size = UDim2.fromScale(0.8, 0.035)
 		fill.Size = UDim2.fromScale(math.clamp(view.havoc / math.max(1, view.target), 0, 1), 1)
 	end
+	-- Clip and Beat my score
+	if actions.onClip then
+		local clip = button(card, "Clip", "▶ CLIP", Color3.fromRGB(255, 180, 220))
+		clip.Position = UDim2.fromScale(0.05, 0.69)
+		clip.Size = UDim2.fromScale(0.42, 0.09)
+		clip.Activated:Connect(actions.onClip)
+	end
+	if actions.onChallenge then
+		local beat = button(card, "Beat", "BEAT MY SCORE", Color3.fromRGB(190, 230, 255))
+		beat.Position = UDim2.fromScale(0.5, 0.69)
+		beat.Size = UDim2.fromScale(0.45, 0.09)
+		beat.Activated:Connect(actions.onChallenge)
+	end
 	-- Buttons
 	local again = button(card, "Again", "RIDE AGAIN", GREY)
-	again.Position = UDim2.fromScale(0.05, 0.78)
-	again.Size = UDim2.fromScale(0.42, 0.15)
+	again.Position = UDim2.fromScale(0.05, 0.81)
+	again.Size = UDim2.fromScale(0.42, 0.14)
 	local leave = button(card, "Leave", "LEAVE", WHITE)
-	leave.Position = UDim2.fromScale(0.5, 0.78)
-	leave.Size = UDim2.fromScale(0.24, 0.15)
+	leave.Position = UDim2.fromScale(0.5, 0.81)
+	leave.Size = UDim2.fromScale(0.24, 0.14)
 	local top = button(card, "Top", "TOP", SKY)
-	top.Position = UDim2.fromScale(0.76, 0.78)
-	top.Size = UDim2.fromScale(0.19, 0.15)
+	top.Position = UDim2.fromScale(0.76, 0.81)
+	top.Size = UDim2.fromScale(0.19, 0.14)
 	local armed = false
 	task.delay(cfg.Run.resultsSkip, function()
 		armed = true

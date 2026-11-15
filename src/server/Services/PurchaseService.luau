@@ -19,6 +19,7 @@ local Net = require(Shared.Net)
 local ProfileSchema = require(Shared.ProfileSchema)
 
 local Services = script.Parent
+local Analytics = require(Services.Analytics)
 local DataService = require(Services.DataService)
 local EconomyService = require(Services.EconomyService)
 local ShopService = require(Services.ShopService)
@@ -117,6 +118,7 @@ local function processReceipt(receipt): Enum.ProductPurchaseDecision
 		-- Recorded in this session; Roblox asks again and the next save keeps it
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
+	Analytics.purchaseStep(player, Analytics.PURCHASE.success)
 	Net.fire("Shop.Result", player, { ok = true, id = name, robux = true, product = true })
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
@@ -220,6 +222,7 @@ function PurchaseService.init()
 			if bought and name and profile then
 				PurchaseService.grantPass(profile, name)
 				DataService.changed(player)
+				Analytics.purchaseStep(player, Analytics.PURCHASE.success)
 				Net.fire("Shop.Result", player, { ok = true, id = name, robux = true, pass = true })
 			end
 		end

@@ -33,6 +33,7 @@ local role = require(Shared:WaitForChild("Place")).role()
 -- { name, module, only in this place role (nil = every place) }
 local ORDER = {
 	{ "Input", "InputController" },
+	{ "Telemetry", "Telemetry" },
 	{ "SurfaceEffects", "SurfaceEffects" },
 	{ "Debris", "Debris" },
 	{ "Ragdoll", "RagdollClient" },
@@ -42,6 +43,7 @@ local ORDER = {
 	{ "Camera", "CameraController" },
 	{ "CrashReplay", "CrashReplay" },
 	{ "Juice", "JuiceService" },
+	{ "Audio", "AudioController" },
 	{ "Hud", "HudController" },
 	{ "Profile", "ProfileClient" },
 	{ "Settings", "SettingsMenu" },
@@ -49,6 +51,7 @@ local ORDER = {
 	{ "Builder", "BuilderClient", "Hub" },
 	{ "Browse", "BrowseClient", "Hub" },
 	{ "Shop", "ShopClient" },
+	{ "Emote", "EmoteClient" },
 	{ "Race", "RaceClient", "Hub" },
 	{ "Hub", "HubClient", "Hub" },
 	{ "Brawl", "BrawlClient", "Brawl" },
@@ -79,3 +82,5 @@ for _, entry in ORDER do
 		task.spawn(controller.start)
 	end
 end
+-- The Wobble Bot loading screen (ReplicatedFirst) waits for this
+LocalPlayer:SetAttribute("ClientReady", true)

@@ -9,7 +9,8 @@
 --   rarity    crate odds and the duplicate refund (common, rare, epic, legendary)
 --   source    "shop" (coins, can be in the daily rotation), "crate" (crate only), "pass" (a game pass),
 --             "starter" (the Starter Pack), "mastery" (a vehicle's mastery level), "streak" (day 7),
---             "ranked" (a Bumper Brawl ranked season reward, one per tier reached)
+--             "ranked" (a Bumper Brawl ranked season reward, one per tier reached), "free" (everyone has it:
+--             the 4 starting emotes)
 --   color     { r, g, b } and material for paints and rims, the main colour for the rest
 -- PLACEHOLDER ART: every item is a colour, material or simple part until the art pass gives them meshes
 -- and textures; horns have no sound until nate picks licensed sounds (Config.Sounds).
@@ -527,6 +528,11 @@ local items: { Item } = {
 		source = "shop",
 		color = { 255, 214, 10 },
 	},
+	-- Free emotes: the first 4 wheel slots (Emotes.DEFAULT)
+	{ id = "emote_thumbs", kind = "emote", name = "Thumbs Up", rarity = "common", source = "free" },
+	{ id = "emote_point", kind = "emote", name = "Point", rarity = "common", source = "free" },
+	{ id = "emote_laugh", kind = "emote", name = "Ha Ha", rarity = "common", source = "free" },
+	{ id = "emote_shrug", kind = "emote", name = "Shrug", rarity = "common", source = "free" },
 	-- Rider Pass: 8 outfits and 4 emotes
 	{
 		id = "outfit_racer",

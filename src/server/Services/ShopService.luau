@@ -13,10 +13,12 @@
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Catalog = require(Shared.Catalog)
 local Config = require(Shared.Config)
+local Emotes = require(Shared.Emotes)
 local Net = require(Shared.Net)
 local ShopMath = require(Shared.ShopMath)
 
 local Services = script.Parent
+local Analytics = require(Services.Analytics)
 local DataService = require(Services.DataService)
 local EconomyService = require(Services.EconomyService)
 local RaceService = require(Services.RaceService)
@@ -30,6 +32,9 @@ ShopService.robuxBuy = nil :: ((Player, string) -> ())? -- PurchaseService
 local random = Random.new()
 
 local function answer(player: Player, result: { [string]: any })
+	if result.ok and result.id ~= "rebirth" then
+		Analytics.purchaseStep(player, Analytics.PURCHASE.success)
+	end
 	Net.fire("Shop.Result", player, result)
 end
 
@@ -128,6 +133,7 @@ local function onBuy(player: Player, id: string, currency: string)
 	if profile == nil then
 		return
 	end
+	Analytics.purchaseStep(player, Analytics.PURCHASE.buyTap)
 	if currency == "robux" then
 		if ShopService.robuxBuy then
 			ShopService.robuxBuy(player, id)
@@ -162,6 +168,19 @@ local function onEquip(player: Player, vehicleId: string, slot: string, itemId: 
 	if profile == nil then
 		return
 	end
+	-- Emote wheel slots ("emote1" to "emote6")
+	local emoteSlot = tonumber(string.match(slot, "^emote(%d)$"))
+	if emoteSlot then
+		if vehicleId ~= "rider" then
+			return
+		end
+		local wheel = Emotes.setSlot(profile, emoteSlot, itemId)
+		if wheel then
+			profile.rider.emotes = wheel
+			DataService.changed(player)
+		end
+		return
+	end
 	local isRider = slot == "hat" or slot == "outfit"
 	if isRider ~= (vehicleId == "rider") then
 		return
@@ -190,6 +209,11 @@ local function onEquip(player: Player, vehicleId: string, slot: string, itemId: 
 			entry.parts = if value then { value } else {}
 		else
 			entry[slot] = value
+		end
+		-- Onboarding: the first free paint
+		if slot == "paint" and value and not profile.tut.freePaint then
+			profile.tut.freePaint = true
+			EconomyService.funnel(player, 6, "Free paint")
 		end
 	end
 	DataService.changed(player)
@@ -259,6 +283,17 @@ function ShopService.init()
 	end)
 	Net.on("Shop.Buy", onBuy)
 	Net.on("Garage.Equip", onEquip)
+	-- Emotes: only from your own wheel, only while you have a car (everyone else's device plays it)
+	Net.on("Rider.Emote", function(player: Player, id: string)
+		local profile = DataService.get(player)
+		if profile == nil or VehicleService.getVehicle(player) == nil then
+			return
+		end
+		if table.find(Emotes.wheel(profile), id) == nil then
+			return
+		end
+		Net.fireAllExcept("Rider.Emote", player, player.UserId, id)
+	end)
 	TracksService.Finished:Connect(function(player: Player, map: any)
 		if not map.testOwner then
 			ShopService.addMastery(player, Config.Progression.masteryPoints.tracksFinish)

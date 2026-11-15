@@ -8,7 +8,7 @@
 
 local Config = {}
 
-Config.Version = "0.9.0-m8"
+Config.Version = "1.0.0-m9"
 
 ---------------------------------------------------------------------------
 -- World
@@ -566,6 +566,40 @@ Config.Sounds = {
 	RunOver = "",
 }
 
+-- Audio design (spec: Audio design). Every id is empty until nate picks licence-checked sounds.
+Config.Audio = {
+	-- Music: one loop per place (calm hub, busy Brawl, driving Highway), crossfaded, ducked during results
+	music = { Hub = "", Brawl = "", Highway = "" },
+	musicVolume = 0.5, -- of the Music setting
+	crossfade = 1.5,
+	duckDb = 6, -- quieter by 6 dB while a results card shows
+	-- Engines: a hum for your car and the 3 nearest others, pitched by speed; none past 150 studs
+	engine = { cars = 4, minPitch = 0.8, maxPitch = 1.6, topSpeed = 110, volume = 0.35, maxDistance = 150 },
+	-- Juice events that are interface sounds (the UI group); the rest are SFX
+	uiSounds = {
+		Coin = true,
+		StarEarned = true,
+		ComboUp = true,
+		ComboLost = true,
+		BuilderPlace = true,
+		BuilderRemove = true,
+		Publish = true,
+		RankUp = true,
+		Cheer = true,
+	},
+	-- Voice lines (generated or none): one short clip per juice event, from Highway Hal (Highway) and
+	-- Marla Sprocket (Brawl); at most one line every 2.5 s
+	voice = {
+		Finish = { place = "Brawl", id = "" }, -- "Round one!" at BUMP!
+		KO = { place = "Brawl", id = "" }, -- "Splash!"
+		TileWarn = { place = "Brawl", id = "" }, -- "Watch your step!"
+		PileUp = { place = "Highway", id = "" }, -- "Pile-up!"
+		BoneCrack = { place = "Highway", id = "" }, -- "Ouch, that's a crack!"
+		RunOver = { place = "Highway", id = "" }, -- "What a ride!"
+	},
+	voiceGap = 2.5,
+}
+
 Config.Juice = {
 	Landing = { shake = 0.25, shakeTime = 0.1, vibration = 0.2, vibrationTime = 0.04 },
 	Bump = { shake = 0.15, shakeTime = 0.1, vibration = 0.4, vibrationTime = 0.04, sparks = 6 },
@@ -588,7 +622,7 @@ Config.Juice = {
 	Hop = {},
 	RiderEject = { shake = 0.3, shakeTime = 0.1 },
 	Respawn = {},
-	Checkpoint = { vibration = 0.3, vibrationTime = 0.04 },
+	Checkpoint = { vibration = 0.3, vibrationTime = 0.04, hitStop = 0.05 },
 	PanelTear = { sparks = 8 },
 	GlassShatter = {},
 	FireStart = { vibration = 0.3, vibrationTime = 0.06 },

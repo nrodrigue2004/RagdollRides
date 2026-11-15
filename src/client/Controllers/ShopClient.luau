@@ -19,11 +19,13 @@ local Workspace = game:GetService("Workspace")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Catalog = require(Shared.Catalog)
 local Config = require(Shared.Config)
+local Emotes = require(Shared.Emotes)
 local Net = require(Shared.Net)
 local ProfileSchema = require(Shared.ProfileSchema)
 local ShopMath = require(Shared.ShopMath)
 
 local Client = script.Parent.Parent
+local JuiceFx = require(Client.Fx.JuiceFx)
 local LookFx = require(Client.Fx.LookFx)
 local ShopHud = require(Client.Ui.ShopHud)
 local TracksHud = require(Client.Ui.TracksHud)
@@ -37,6 +39,7 @@ local controllers: any = nil
 local screen: string? = nil -- "shop" | "garage" | "quests"
 local tab = ""
 local trailSlot = "trail" -- the garage's TRAILS tab: "trail" (rear) or "trail2" (front, VIP)
+local emoteSlot = 1 -- the RIDER tab's emote wheel slot being filled
 local garageDot = false
 local offerShown = false
 local friendCache: { [number]: boolean } = {}
@@ -485,6 +488,54 @@ local function trailCards(v: { [string]: any }): { ShopHud.Card }
 	return cards
 end
 
+-- The emote wheel: pick a slot, then put any emote you may use in it (spec: Rider > emote wheel slots)
+local function emoteCards(v: { [string]: any }): { ShopHud.Card }
+	local rules = rulesProfile(v)
+	local wheel = (v.rider or {}).emotes or Emotes.wheel(rules)
+	local count = #wheel
+	if emoteSlot > count then
+		emoteSlot = 1
+	end
+	local riderPass = (v.passes or {}).rider == true
+	local cards: { ShopHud.Card } = {
+		{
+			id = "emoteSlot",
+			title = string.format("Emote wheel: slot %d of %d", emoteSlot, count),
+			sub = if wheel[emoteSlot] ~= "" then "Now: " .. itemName(wheel[emoteSlot]) else "Empty",
+			lines = if riderPass then nil else { "The Rider Pass adds slots 5 and 6, and 4 more emotes" },
+			wide = true,
+			button = "NEXT SLOT",
+			buttonColor = ShopHud.BLUE,
+			onPress = function()
+				emoteSlot = emoteSlot % count + 1
+				ShopClient.refresh()
+			end,
+		},
+	}
+	for _, item in Catalog.items do
+		if item.kind == "emote" then
+			local usable = Emotes.canUse(rules, item.id)
+			local at = table.find(wheel, item.id)
+			local here = at == emoteSlot
+			table.insert(cards, {
+				id = item.id,
+				title = item.name,
+				sub = if usable
+					then (Emotes.defs[item.id] and Emotes.defs[item.id].label)
+					else lockedSub(item),
+				rarity = item.rarity,
+				badge = if at then "SLOT " .. at else nil,
+				button = if not usable then nil elseif here then "TAKE OUT" else "PUT IN " .. emoteSlot,
+				buttonColor = if here then ShopHud.WHITE else ShopHud.GREEN,
+				onPress = function()
+					Net.send("Garage.Equip", "rider", "emote" .. emoteSlot, if here then "" else item.id)
+				end,
+			})
+		end
+	end
+	return cards
+end
+
 local function riderCards(v: { [string]: any }): { ShopHud.Card }
 	local cards: { ShopHud.Card } = {}
 	for _, slot in Catalog.RIDER_SLOTS do
@@ -496,6 +547,9 @@ local function riderCards(v: { [string]: any }): { ShopHud.Card }
 			end
 			table.insert(cards, card)
 		end
+	end
+	for _, card in emoteCards(v) do
+		table.insert(cards, card)
 	end
 	return cards
 end
@@ -741,6 +795,9 @@ function ShopClient.open(which: string, startTab: string?)
 		controllers.Settings.close()
 	end
 	screen = which
+	if which == "shop" then
+		controllers.Telemetry.send("shop_open")
+	end
 	local tabs = if which == "shop" then SHOP_TABS elseif which == "garage" then GARAGE_TABS else {}
 	tab = startTab or (if #tabs > 0 then tabs[1].id else "")
 	if which == "garage" then
@@ -749,6 +806,9 @@ function ShopClient.open(which: string, startTab: string?)
 	end
 	ShopHud.open(LocalPlayer:WaitForChild("PlayerGui"), TITLES[which], nil, tabs, tab, function(id)
 		tab = id
+		if which == "shop" then
+			controllers.Telemetry.send("item_view", 1, id)
+		end
 		ShopHud.setTab(id)
 		local content = ShopHud.content()
 		if content then
@@ -811,6 +871,10 @@ local function onResult(result: any)
 		return
 	end
 	local id = result.id
+	if result.quest or id == "chest" or id == "weeklyStars" then
+		JuiceFx.confetti(0.5, 0.4) -- quest complete (spec: Juice table)
+		controllers.Juice.fire("StarEarned", { volume = 0.5 })
+	end
 	if id == "rebirth" then
 		toast(string.format("Rebirth %d! Coins earn more from now on.", result.rebirths or 1), 5)
 		ShopClient.refresh()

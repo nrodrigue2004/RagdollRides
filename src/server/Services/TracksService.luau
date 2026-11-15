@@ -31,6 +31,7 @@ local StarterMaps = require(Shared.StarterMaps)
 local TracksMath = require(Shared.TracksMath)
 
 local Services = script.Parent
+local Analytics = require(Services.Analytics)
 local DataService = require(Services.DataService)
 local EconomyService = require(Services.EconomyService)
 local MapBuilder = require(Shared.MapBuilder)
@@ -341,6 +342,7 @@ end
 local function rejectResult(player: Player, mapId: string, reason: string)
 	local map = mapDefs[mapId]
 	TracksService.RunRejected:Fire(player, mapId, reason)
+	Analytics.cheat(player, "tracks_" .. reason)
 	if map == nil or not map.custom then
 		noteReject(player, reason) -- a creator testing their own map is never board-banned for it
 	end
@@ -429,6 +431,14 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 
 	local coins = EconomyService.grantCoins(player, payout.coins, "tracks", "Finish_" .. mapId)
 	local stars = EconomyService.grantStars(player, payout.stars, "Stars_" .. mapId)
+	Analytics.event(
+		player,
+		"run_finish",
+		math.floor(time * 1000),
+		mapId,
+		string.format("stars %d, %s", payout.tier, profile.equippedVehicle),
+		tostring(workspace:GetAttribute("Mode") or "Tracks")
+	)
 
 	if map.tut and not profile.tut[map.tut] then
 		profile.tut[map.tut] = true

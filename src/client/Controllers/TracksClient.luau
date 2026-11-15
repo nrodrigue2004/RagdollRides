@@ -487,12 +487,18 @@ local function collectCoin(index: number)
 	local now = os.clock()
 	coinStreak = if now - lastCoinClock <= COIN_STREAK_GAP then coinStreak + 1 else 0
 	lastCoinClock = now
-	controllers.Juice.fire("Coin", { pitch = 1 + math.min(coinStreak, 12) * 0.06, volume = 0.5 })
+	local point: Vector3? = nil
 	for part in coinParts do
 		if isOnMap(part) and part:GetAttribute("CoinIndex") == index then
+			point = point or part.Position
 			setCoinVisible(part, false)
 		end
 	end
+	-- One semitone higher per coin in a streak, up to 5 (spec: Juice table > Coin pickup)
+	controllers.Juice.fire(
+		"Coin",
+		{ pitch = 2 ^ (math.min(coinStreak, 5) / 12), volume = 0.5, point = point }
+	)
 end
 
 local function inBox(cf: CFrame, size: Vector3, point: Vector3, grow: Vector3): boolean
@@ -755,6 +761,7 @@ local NOTICES = {
 	modeSoon = "Coming soon! This mode is being built.",
 	rankedLocked = "Ranked opens after 3 casual Bumper Brawl rounds. Play some casual first!",
 	versusLocked = "Versus opens after 2 co-op Highway runs. Ride co-op first!",
+	challenge = "A friend challenged you to beat their Highway Havoc score! Pick Highway Havoc in the mode picker.",
 	seasonRewards = "New ranked season! Your rewards are in the garage.",
 	teleportFailed = "Couldn't get there. Try again in a moment!",
 }

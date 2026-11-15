@@ -20,6 +20,7 @@
 --   20 s that breaks your first bone if nothing has yet.
 -- * Results, RIDE AGAIN, LEAVE (HUB) and the boards (TOP).
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -36,6 +37,7 @@ local Score = require(Shared.Score)
 local Client = script.Parent.Parent
 local ExplosionFx = require(Client.Fx.ExplosionFx)
 local HighwayHud = require(Client.Ui.HighwayHud)
+local Clip = require(Client.Highway.Clip)
 local Road = require(Client.Highway.Road)
 local Traffic = require(Client.Highway.Traffic)
 local TracksHud = require(Client.Ui.TracksHud)
@@ -70,6 +72,8 @@ type RunState = {
 	checkpointTimer: number,
 	air: number,
 	spin: number,
+	clip: Clip.Recorder,
+	clipping: boolean,
 }
 
 local seed: { seed: number, epoch: number, event: string?, versus: boolean }? = nil
@@ -135,6 +139,7 @@ local function popPoints(points: number, at: Vector3?)
 	if points <= 0 then
 		return
 	end
+	Clip.addPoints((run :: RunState).clip, points)
 	local m = Score.currentMultiplier((run :: RunState).mirror, now(), scfg)
 	local color = if m >= 5
 		then Color3.fromRGB(255, 120, 200)
@@ -459,6 +464,7 @@ local function checkNearMisses(r: RunState, chassis: BasePart)
 			r.near[id] = true
 			if send("Highway.Trick", "near", id, math.min(speed, 300)) then
 				local points = Score.nearMiss(r.mirror, now(), scfg)
+				Clip.addPoints(r.clip, points)
 				HighwayHud.pop(
 					playerGui(),
 					"NEAR MISS +" .. points,
@@ -680,6 +686,8 @@ local function onStart(msg: { [string]: any })
 		checkpointTimer = 0,
 		air = 0,
 		spin = 0,
+		clip = Clip.newRecorder(),
+		clipping = false,
 	}
 	controllers.Vehicle.setKillY(def.origin[2] - 40)
 	if tutorial then
@@ -730,6 +738,10 @@ local function onEvent(e: { [string]: any })
 			Color3.fromRGB(255, 180, 60)
 		)
 		controllers.Juice.fire("PileUp")
+		if run then
+			Clip.addPoints(run.clip, e.points or 0)
+		end
+		controllers.Camera.pull(0.6, 1.4) -- the camera pulls back over the wreck
 	elseif kind == "wreck" then
 		local r = run
 		if r and r.traffic and not r.tutorial then
@@ -797,7 +809,91 @@ local function onBoardData(msg: { [string]: any })
 	end
 end
 
+-- CLIP: the run's best 10 s, then SHARE (a screen capture from its best moment) or DONE
+local function playClip(r: RunState)
+	local chassis = myChassis()
+	local model = chassis and chassis.Parent
+	if model == nil or not model:IsA("Model") then
+		return
+	end
+	local captured: any = nil
+	local clipS = -math.huge
+	local function finish()
+		HighwayHud.clipBar(playerGui(), nil, nil)
+		HighwayHud.setResultsVisible(true)
+		r.clipping = false
+		r.lastRoadS = -math.huge -- rebuild the road around the car again
+	end
+	local function share()
+		if captured == nil then
+			return
+		end
+		controllers.Telemetry.send("clip_share", 1, "highway")
+		local CaptureService = game:GetService("CaptureService") :: any
+		local ok = pcall(function()
+			CaptureService:PromptShareCapture(captured, "", function() end, function() end)
+		end)
+		if not ok then
+			pcall(function()
+				CaptureService:PromptSaveCapturesToGallery({ captured }, function() end)
+			end)
+		end
+	end
+	local playing = Clip.play(r.clip, {
+		model = model :: Model,
+		riderParts = controllers.Ragdoll.getLocalParts(),
+		camera = controllers.Camera,
+		hud = controllers.Hud,
+		onPeak = function()
+			-- The screen at the best moment (verify CaptureService on devices)
+			pcall(function()
+				local CaptureService = game:GetService("CaptureService") :: any
+				CaptureService:CaptureScreenshot(function(contentId)
+					captured = contentId
+					HighwayHud.clipBar(playerGui(), share, function()
+						Clip.stop(r.clip)
+					end)
+				end)
+			end)
+		end,
+		onFrame = function(carCf: CFrame)
+			local s = HighwayMath.locate(r.def, carCf.X, carCf.Z)
+			if math.abs(s - clipS) > 20 then
+				clipS = s
+				Road.update(r.road, s)
+			end
+		end,
+		onDone = finish,
+	})
+	if playing then
+		r.clipping = true
+		HighwayHud.setResultsVisible(false)
+		HighwayHud.clipBar(playerGui(), nil, function()
+			Clip.stop(r.clip)
+		end)
+	end
+end
+
+-- BEAT MY SCORE: a Roblox invite carrying your score (no text of yours: Roblox's own invite card)
+local function challenge(score: number)
+	local SocialService = game:GetService("SocialService")
+	local okCan, can = pcall(function()
+		return SocialService:CanSendGameInviteAsync(LocalPlayer)
+	end)
+	if not okCan or not can then
+		TracksHud.toast("Invites aren't available right now.", 3)
+		return
+	end
+	pcall(function()
+		local options = Instance.new("ExperienceInviteOptions")
+		options.PromptMessage = "Challenge a friend to beat your Highway Havoc score!"
+		options.LaunchData = HttpService:JSONEncode({ beat = math.floor(score), by = LocalPlayer.UserId })
+		SocialService:PromptGameInvite(LocalPlayer, options)
+	end)
+end
+
 local function showResults(msg: { [string]: any })
+	local r = run
 	local chestLine: string? = nil
 	if msg.chest then
 		chestLine = if msg.chest.item
@@ -819,7 +915,19 @@ local function showResults(msg: { [string]: any })
 		target = msg.target,
 		chestLine = chestLine,
 		tutorial = msg.tutorial,
-		line = if msg.tutorial then "Now for real: the full highway, with everyone!" else nil,
+		line = if msg.tutorial
+			then "Now for real: the full highway, with everyone!"
+			elseif msg.challenge and msg.challenge.beaten then string.format(
+				"You beat %s's %s!",
+				msg.challenge.name,
+				HighwayHud.commas(msg.challenge.score)
+			)
+			elseif msg.challenge then string.format(
+				"%s's score to beat: %s",
+				msg.challenge.name,
+				HighwayHud.commas(msg.challenge.score)
+			)
+			else nil,
 	}, {
 		onAgain = function()
 			send("Highway.Again")
@@ -830,6 +938,16 @@ local function showResults(msg: { [string]: any })
 		onBoard = function()
 			HighwayClient.openBoard()
 		end,
+		onClip = if r and Clip.hasClip(r.clip)
+			then function()
+				playClip(r)
+			end
+			else nil,
+		onChallenge = if not msg.tutorial and msg.score > 0
+			then function()
+				challenge(msg.score)
+			end
+			else nil,
 	})
 end
 
@@ -862,7 +980,7 @@ local function step(dt: number)
 	end
 	local pos = chassis.Position
 	local s, lateral = HighwayMath.locate(r.def, pos.X, pos.Z)
-	if math.abs(s - r.lastRoadS) > 5 then
+	if not r.clipping and math.abs(s - r.lastRoadS) > 5 then
 		r.lastRoadS = s
 		Road.update(r.road, s)
 	end
@@ -914,6 +1032,9 @@ local function step(dt: number)
 			event = r.event :: any,
 			tutorial = r.tutorial,
 		})
+	end
+	if not r.over then
+		Clip.record(r.clip, dt, chassis, controllers.Ragdoll.getLocalParts(), r.traffic and r.traffic.rigs)
 	end
 	-- Rider piece velocities from the last frame (for thrown-rider bone breaks)
 	if #riderTouches > 0 then

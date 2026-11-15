@@ -26,6 +26,7 @@ DataService.Loaded = Signal.new() -- (player, profile)
 DataService.Reset = Signal.new() -- (player, profile): a dev reset made it a first-time profile
 -- (player, profile): the player is leaving; handlers run before the last save (a ranked quit penalty)
 DataService.Leaving = Signal.new()
+DataService.SettingChanged = Signal.new() -- (player, key, value): a setting the player changed
 
 type Session = {
 	profile: { [string]: any },
@@ -375,6 +376,9 @@ function DataService.init()
 			return
 		end
 		for key, value in clean do
+			if session.profile.settings[key] ~= value then
+				DataService.SettingChanged:Fire(player, key, value)
+			end
 			session.profile.settings[key] = value
 		end
 		DataService.changed(player)

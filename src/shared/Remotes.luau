@@ -219,6 +219,12 @@ local Remotes: { [string]: RemoteDef } = {
 					"part",
 					"hat",
 					"outfit",
+					"emote1",
+					"emote2",
+					"emote3",
+					"emote4",
+					"emote5",
+					"emote6",
 				},
 			},
 			{ t = "string", max = 40 },
@@ -312,6 +318,14 @@ local Remotes: { [string]: RemoteDef } = {
 		since = "6",
 	},
 	-- An eliminated Brawl driver cheers a finalist (target user id; bots are negative)
+	-- Rider.Emote: play an emote from your wheel (C->S: emote id; S->C to the others: userId, emote id)
+	["Rider.Emote"] = {
+		dir = "C2S2C",
+		schema = { { t = "string", max = 24 } },
+		rate = 0.5,
+		burst = 1,
+		since = "9",
+	},
 	["Cheer"] = { dir = "C2S2C", schema = { { t = "integer" } }, rate = 0.5, burst = 1, since = "7" },
 
 	-- Milestone 7
@@ -387,6 +401,25 @@ local Remotes: { [string]: RemoteDef } = {
 		since = "8",
 	},
 	["Highway.BoardData"] = { dir = "S2C", since = "8" },
+
+	-- Milestone 9: what only the device knows, for the Creator Dashboard (server: Analytics):
+	-- name, value, two short text fields. crash_huge (I, vehicle), perf_sample (average fps,
+	-- "1% low, memory", "preset, device"), clip_share (where), shop_open, item_view (tab), hub_view.
+	["Analytics.Client"] = {
+		dir = "C2S",
+		schema = {
+			{
+				t = "string",
+				oneOf = { "crash_huge", "perf_sample", "clip_share", "shop_open", "item_view", "hub_view" },
+			},
+			{ t = "number", min = 0, max = 100000 },
+			{ t = "string", max = 40 },
+			{ t = "string", max = 40 },
+		},
+		rate = 1,
+		burst = 4,
+		since = "9",
+	},
 	-- A bone broke: the rider piece (1 Head, 2 Torso, 3 LeftArm, 4 RightArm, 5 LeftLeg, 6 RightLeg) and I
 	["Bone.Break"] = {
 		dir = "C2S",

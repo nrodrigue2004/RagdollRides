@@ -24,6 +24,7 @@
 -- Roblox finds Config beside this module; the Lune test runner (no `script`) uses the file path.
 local Config = if script then require(script.Parent.Config) else (require :: any)("./Config")
 local Quests = if script then require(script.Parent.Quests) else (require :: any)("./Quests")
+local Emotes = if script then require(script.Parent.Emotes) else (require :: any)("./Emotes")
 
 local ProfileSchema = {}
 
@@ -104,6 +105,9 @@ function ProfileSchema.default(): { [string]: any }
 			starterBought = false,
 			boardBanDay = 0,
 			lastMode = "",
+			entryId = "", -- the Mode entry funnel's session (Analytics), carried across places
+			challengeScore = 0, -- a friend's Beat my score card (0: none) and who sent it
+			challengeBy = 0,
 		},
 		tracks = {},
 		trackOrder = {},
@@ -345,7 +349,7 @@ function ProfileSchema.clientView(profile: { [string]: any }, now: number?): { [
 		shiny = shiny,
 		crateKeys = if type(keyEntry) == "table" then keyEntry.count or 0 else 0,
 		passes = deepCopy(profile.passes),
-		rider = { hat = profile.rider.hat, outfit = profile.rider.outfit },
+		rider = { hat = profile.rider.hat, outfit = profile.rider.outfit, emotes = Emotes.wheel(profile) },
 		tut = deepCopy(profile.tut),
 		settings = deepCopy(profile.settings),
 		tracks = tracks,

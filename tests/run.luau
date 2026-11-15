@@ -28,6 +28,7 @@ local Boards = require("../src/shared/Boards")
 local BrawlMath = require("../src/shared/BrawlMath")
 local HighwayMath = require("../src/shared/HighwayMath")
 local Score = require("../src/shared/Score")
+local Emotes = require("../src/shared/Emotes")
 
 local passed, failed = 0, 0
 local current = ""
@@ -2117,6 +2118,87 @@ test("highway: bones break in order, by side, with limits", function()
 	check(not Score.mayBreak(clock, 1.8, limits), "3 per crash")
 	check(Score.mayBreak(clock, 3, limits), "a new crash")
 end)
+
+test("emotes: wheel, slots and poses", function()
+	local free = { passes = {}, inventory = {}, rider = { emotes = {} } }
+	local pass = { passes = { rider = true }, inventory = {}, rider = { emotes = {} } }
+	-- Every emote in the catalog has a pose, and every pose is in the catalog
+	local catalogEmotes = 0
+	for _, item in Catalog.items do
+		if item.kind == "emote" then
+			catalogEmotes += 1
+			check(Emotes.defs[item.id] ~= nil, item.id .. " has a pose")
+			check(item.coins == nil, item.id .. " is never sold for coins")
+		end
+	end
+	local defs = 0
+	for id, def in Emotes.defs do
+		defs += 1
+		check(Catalog.byId[id] ~= nil and Catalog.byId[id].kind == "emote", id .. " is a catalog emote")
+		check(def.duration >= 1 and def.duration <= 3, id .. " lasts 1 to 3 s")
+		check(#def.label > 0 and #def.label <= 8, id .. " short preset label")
+	end
+	check(defs == catalogEmotes and defs == 8, "8 emotes (4 free, 4 Rider Pass)")
+	-- Wheel sizes and the free start
+	local w = Emotes.wheel(free)
+	check(#w == 4, "4 slots without the pass")
+	for i, id in Emotes.DEFAULT do
+		check(w[i] == id and Emotes.canUse(free, id), "free emote " .. id .. " in slot " .. i)
+	end
+	local wp = Emotes.wheel(pass)
+	check(#wp == 6 and wp[5] == "" and wp[6] == "", "6 slots with the pass, 5 and 6 empty")
+	-- Pass emotes
+	check(not Emotes.canUse(free, "emote_wave"), "wave needs the Rider Pass")
+	check(Emotes.canUse(pass, "emote_wave"), "wave with the Rider Pass")
+	check(Emotes.setSlot(free, 1, "emote_wave") == nil, "can't slot a pass emote without the pass")
+	check(Emotes.setSlot(free, 5, "emote_thumbs") == nil, "no slot 5 without the pass")
+	check(
+		Emotes.setSlot(free, 0, "emote_thumbs") == nil and Emotes.setSlot(free, 1.5, "") == nil,
+		"bad slots"
+	)
+	check(Emotes.setSlot(pass, 1, "nope") == nil, "unknown emote")
+	local saved = Emotes.setSlot(pass, 5, "emote_wave") :: { string }
+	check(
+		saved ~= nil and #saved == 6 and saved[5] == "emote_wave" and saved[1] == "emote_thumbs",
+		"slot 5 filled"
+	)
+	pass.rider.emotes = saved
+	-- Moving an emote empties its old slot
+	local moved = Emotes.setSlot(pass, 6, "emote_wave") :: { string }
+	check(moved[6] == "emote_wave" and moved[5] == "", "an emote moves between slots")
+	-- A refunded pass hides its emotes and slots, and buying it back restores them
+	local lapsed = { passes = {}, inventory = {}, rider = { emotes = moved } }
+	local lw = Emotes.wheel(lapsed)
+	check(#lw == 4 and table.find(lw, "emote_wave") == nil, "pass emotes hidden without the pass")
+	local kept = Emotes.setSlot(lapsed, 1, "") :: { string }
+	check(kept[6] == "emote_wave" and kept[1] == "", "hidden pass slots kept while editing")
+	-- An emptied wheel stays empty (not reset to the defaults)
+	local cleared = { passes = {}, inventory = {}, rider = { emotes = { "", "", "", "", "", "" } } }
+	check(Emotes.wheel(cleared)[1] == "", "an emptied slot stays empty")
+	-- Poses: blend in, hold, blend out, and the spin ends where it started
+	for id, def in Emotes.defs do
+		local _, w0 = Emotes.pose(id, 0)
+		local angles, wMid = Emotes.pose(id, def.duration / 2)
+		local _, wEnd = Emotes.pose(id, def.duration)
+		check(w0 == 0 and wMid == 1 and wEnd == 0, id .. " eases in and out")
+		for _, piece in Emotes.PIECES do
+			local a = angles[piece]
+			check(a ~= nil and a.x == a.x and a.y == a.y and a.z == a.z, id .. " " .. piece .. " angles")
+		end
+	end
+	local _, wNone = Emotes.pose("nope", 0.5)
+	check(wNone == 0, "an unknown emote does nothing")
+	local spinEnd = Emotes.pose("emote_spin", Emotes.defs.emote_spin.duration - 1e-3)
+	check(
+		math.abs(spinEnd.Torso.y % 360) < 1 or math.abs(spinEnd.Torso.y % 360 - 360) < 1,
+		"spin ends facing forward"
+	)
+	-- The profile view sends the wheel
+	local profile = ProfileSchema.default()
+	local view = ProfileSchema.clientView(profile)
+	check(view.rider.emotes ~= nil and #view.rider.emotes == 4, "profile view has the emote wheel")
+end)
+
 ---------------------------------------------------------------------------
 -- Optional: check the built place file has the scripts in the right services
 local placePath = process.args[1]
@@ -2155,6 +2237,7 @@ if placePath then
 				"BrawlMath",
 				"HighwayMath",
 				"Score",
+				"Emotes",
 				"Place",
 				"Movers",
 				"PieceCatalog",
@@ -2195,11 +2278,14 @@ if placePath then
 				"HubClient",
 				"BrawlClient",
 				"HighwayClient",
+				"Telemetry",
+				"AudioController",
+				"EmoteClient",
 			}
 		do
 			check(client ~= nil and client:FindFirstChild("Controllers"):FindFirstChild(name) ~= nil, name)
 		end
-		for _, name in { "DamageVisuals", "ExplosionFx", "MeshDents", "Confetti", "LookFx" } do
+		for _, name in { "DamageVisuals", "ExplosionFx", "MeshDents", "Confetti", "LookFx", "Mix", "JuiceFx" } do
 			local fx = client and client:FindFirstChild("Fx")
 			check(fx ~= nil and fx:FindFirstChild(name) ~= nil, "Fx." .. name)
 		end
@@ -2212,7 +2298,7 @@ if placePath then
 		check(ui ~= nil and ui:FindFirstChild("RaceHud") ~= nil, "Ui.RaceHud")
 		check(ui ~= nil and ui:FindFirstChild("BrawlHud") ~= nil, "Ui.BrawlHud")
 		check(ui ~= nil and ui:FindFirstChild("HighwayHud") ~= nil, "Ui.HighwayHud")
-		for _, name in { "Road", "Traffic" } do
+		for _, name in { "Road", "Traffic", "Clip" } do
 			local highway = client and client:FindFirstChild("Highway")
 			check(highway ~= nil and highway:FindFirstChild(name) ~= nil, "Highway." .. name)
 		end
@@ -2242,6 +2328,7 @@ if placePath then
 				"BrawlBots",
 				"BoardStore",
 				"HighwayService",
+				"Analytics",
 				"LiveCounts",
 				"TestTrack",
 				"TracksService",
@@ -2250,6 +2337,8 @@ if placePath then
 		do
 			check(services ~= nil and services:FindFirstChild(name) ~= nil, "Services." .. name)
 		end
+		local first = game:GetService("ReplicatedFirst"):FindFirstChild("LoadingScreen")
+		check(first ~= nil and first.ClassName == "LocalScript", "ReplicatedFirst.LoadingScreen")
 		check(game:GetService("Players").CharacterAutoLoads == false, "no avatar characters")
 		check(game:GetService("Workspace").StreamingEnabled == true, "streaming on")
 		check(game:GetService("Workspace"):GetAttribute("PlaceRole") == nil, "the hub place has no PlaceRole")
@@ -2289,7 +2378,7 @@ if placePath then
 			for key in base.tree do
 				check(project.tree[key] ~= nil, file .. " has " .. key)
 			end
-			for _, key in { "ServerScriptService", "ReplicatedStorage", "StarterPlayer" } do
+			for _, key in { "ServerScriptService", "ReplicatedStorage", "ReplicatedFirst", "StarterPlayer" } do
 				check(
 					serde.encode("json", project.tree[key]) == serde.encode("json", base.tree[key]),
 					file .. " same " .. key

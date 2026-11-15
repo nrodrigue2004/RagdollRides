@@ -12,6 +12,10 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Signal = require(Shared.Util.Signal)
 
+local JuiceFx = require(script.Parent.Parent.Fx.JuiceFx)
+local Mix = require(script.Parent.Parent.Fx.Mix)
+local TracksHud = require(script.Parent.Parent.Ui.TracksHud)
+
 local JuiceService = {}
 
 JuiceService.Fired = Signal.new() -- (eventName, data) for the dev panel and later the HUD pop layer
@@ -29,7 +33,8 @@ local function playSound(name: string, volume: number?, pitch: number?)
 	sound.SoundId = id
 	sound.Volume = volume or 0.6
 	sound.PlaybackSpeed = pitch or 1
-	sound.SoundGroup = soundGroup
+	-- UI sounds go to the UI group, the rest to SFX (spec: Audio design > Mix groups)
+	sound.SoundGroup = if Config.Audio.uiSounds[name] then Mix.group("UI") else soundGroup
 	sound.Parent = SoundService
 	sound:Play()
 	sound.Ended:Once(function()
@@ -78,6 +83,13 @@ function JuiceService.fire(event: string, data: any?)
 	if row.vibration then
 		vibrate(math.clamp(row.vibration * scale, 0, 1), row.vibrationTime or 0.05)
 	end
+	if row.hitStop then
+		controllers.Camera.freeze(row.hitStop)
+		controllers.Vehicle.freezeRender(row.hitStop)
+	end
+	if event == "Coin" then
+		JuiceFx.coinFly(data.point, TracksHud.coinTarget())
+	end
 	if row.sparks and data.point then
 		local vehicle = controllers.Vehicle.getState()
 		if vehicle and vehicle.effects then
@@ -85,6 +97,9 @@ function JuiceService.fire(event: string, data: any?)
 		end
 	end
 	playSound(event, data.volume, data.pitch)
+	if controllers.Audio then
+		controllers.Audio.voice(event) -- Highway Hal and Marla Sprocket's short lines
+	end
 	JuiceService.Fired:Fire(event, data)
 end
 
@@ -102,10 +117,8 @@ end
 
 function JuiceService.init(all)
 	controllers = all
-	soundGroup = Instance.new("SoundGroup")
-	soundGroup.Name = "SFX"
+	soundGroup = Mix.group("SFX")
 	soundGroup.Volume = 0.8
-	soundGroup.Parent = SoundService
 end
 
 function JuiceService.start()
@@ -146,11 +159,25 @@ function JuiceService.start()
 	if controllers.Ragdoll then
 		controllers.Ragdoll.Ejected:Connect(function()
 			JuiceService.fire("RiderEject")
+			local chassis = Vehicle.getChassis()
+			if chassis then
+				JuiceFx.starPuff(chassis.Position + Vector3.new(0, 3, 0))
+			end
 		end)
 		controllers.Ragdoll.Respawned:Connect(function()
 			JuiceService.fire("Respawn")
+			local chassis = Vehicle.getChassis()
+			if chassis then
+				JuiceFx.glowRing(chassis.Position)
+			end
 		end)
 	end
+	-- Speed lines above 80 studs/s (spec: Juice table > Accelerate)
+	game:GetService("RunService").RenderStepped:Connect(function()
+		local chassis = Vehicle.getChassis()
+		local speed = if chassis and chassis.Parent then chassis.AssemblyLinearVelocity.Magnitude else 0
+		JuiceFx.speedLines(speed, controllers.Camera.isReducedMotion(), os.clock())
+	end)
 end
 
 return JuiceService

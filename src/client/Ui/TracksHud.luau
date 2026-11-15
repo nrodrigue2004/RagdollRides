@@ -505,6 +505,11 @@ function TracksHud.setQuestTracker(rows: { TrackerRow }?)
 	drawTracker()
 end
 
+-- Where flying coins land (the coin counter)
+function TracksHud.coinTarget(): GuiObject?
+	return coinsLabel
+end
+
 function TracksHud.setWallet(coins: number, stars: number, goal: Goal?)
 	starsLabel.Text = tostring(stars)
 	if coins ~= shownCoins then

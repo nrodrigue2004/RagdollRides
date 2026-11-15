@@ -12,6 +12,7 @@ local RunService = game:GetService("RunService")
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
+local Emotes = require(Shared.Emotes)
 local Looks = require(Shared.Looks)
 local PoseCodec = require(Shared.PoseCodec)
 local Signal = require(Shared.Util.Signal)
@@ -65,23 +66,38 @@ local function joints(s: number)
 	}
 end
 
--- Seated pose relative to the Seat attachment. steer is -1..1.
-local function seatedPose(s: number, steer: number): { [string]: CFrame }
-	local torso = CFrame.new(0, 1 * s, 0)
+export type EmotePose = { angles: { [string]: { x: number, y: number, z: number } }, weight: number }
+
+-- Blend a seated joint's angles (radians) toward an emote's (degrees) by the emote's weight
+local function blend(x: number, y: number, z: number, emote: EmotePose?, piece: string): CFrame
+	local target = emote and emote.angles[piece]
+	if emote and target then
+		local w = emote.weight
+		x += (math.rad(target.x) - x) * w
+		y += (math.rad(target.y) - y) * w
+		z += (math.rad(target.z) - z) * w
+	end
+	return CFrame.Angles(x, y, z)
+end
+
+-- Seated pose relative to the Seat attachment. steer is -1..1. An emote moves the torso, head and arms
+-- (the legs stay in the car).
+local function seatedPose(s: number, steer: number, emote: EmotePose?): { [string]: CFrame }
+	local torso = CFrame.new(0, 1 * s, 0) * blend(0, 0, 0, emote, "Torso")
 	local j = joints(s)
 	local armReach = math.rad(70)
 	local thigh = math.rad(75)
 	local steerTilt = steer * math.rad(14)
 	return {
 		Torso = torso,
-		Head = torso * CFrame.new(j.Head) * CFrame.new(0, 0.65 * s, 0),
+		Head = torso * CFrame.new(j.Head) * blend(0, 0, 0, emote, "Head") * CFrame.new(0, 0.65 * s, 0),
 		LeftArm = torso
 			* CFrame.new(j.LeftArm)
-			* CFrame.Angles(armReach + steerTilt, 0, 0)
+			* blend(armReach + steerTilt, 0, 0, emote, "LeftArm")
 			* CFrame.new(0, -1 * s, 0),
 		RightArm = torso
 			* CFrame.new(j.RightArm)
-			* CFrame.Angles(armReach - steerTilt, 0, 0)
+			* blend(armReach - steerTilt, 0, 0, emote, "RightArm")
 			* CFrame.new(0, -1 * s, 0),
 		LeftLeg = torso * CFrame.new(j.LeftLeg) * CFrame.Angles(thigh, 0, 0) * CFrame.new(0, -1 * s, 0),
 		RightLeg = torso * CFrame.new(j.RightLeg) * CFrame.Angles(thigh, 0, 0) * CFrame.new(0, -1 * s, 0),
@@ -248,9 +264,22 @@ local function setTransparency(rider, value: number)
 	end
 end
 
+local function emotePose(rider): EmotePose?
+	local playing = rider.emote
+	if playing == nil then
+		return nil
+	end
+	local angles, weight = Emotes.pose(playing.id, os.clock() - playing.started)
+	if weight <= 0 and os.clock() - playing.started > Emotes.EASE then
+		rider.emote = nil
+		return nil
+	end
+	return { angles = angles, weight = weight }
+end
+
 local function placeSeated(rider, steer: number)
 	local seatCFrame = rider.seat.WorldCFrame
-	local pose = seatedPose(rider.scale, steer)
+	local pose = seatedPose(rider.scale, steer, emotePose(rider))
 	for name, part in rider.parts do
 		part.CFrame = seatCFrame * pose[name]
 	end
@@ -273,6 +302,9 @@ end
 -- extraUp adds an upward kick (an explosion throws the rider clear upward, unharmed)
 function RagdollClient.eject(vehicleVelocity: Vector3, extraUp: number?)
 	local rider = localRider
+	if rider then
+		rider.emote = nil
+	end
 	if not rider or rider.state ~= "seated" then
 		return
 	end
@@ -423,6 +455,32 @@ local frozen = false
 
 function RagdollClient.setFrozen(value: boolean)
 	frozen = value
+end
+
+-- Play an emote on a player's seated rider (yours or anyone's). Returns false when that rider isn't
+-- seated in a car on this device.
+function RagdollClient.playEmote(userId: number, id: string): boolean
+	if Emotes.defs[id] == nil then
+		return false
+	end
+	for model, rider in riders do
+		if model:GetAttribute("OwnerUserId") == userId then
+			local seated = if rider.isLocal
+				then rider.state == "seated"
+				else os.clock() >= rider.remoteRagdollUntil
+			if not seated then
+				return false
+			end
+			rider.emote = { id = id, started = os.clock() }
+			return true
+		end
+	end
+	return false
+end
+
+-- Is your rider playing an emote right now?
+function RagdollClient.isEmoting(): boolean
+	return localRider ~= nil and localRider.emote ~= nil
 end
 
 -- The local rider's 6 parts (for the crash replay's recording), or nil

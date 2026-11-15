@@ -109,6 +109,7 @@ function HubClient.openModes()
 	if view == nil then
 		return
 	end
+	controllers.Telemetry.send("hub_view")
 	local locked = playSeconds() < cfg.modesUnlockSeconds
 	local minutes = math.max(1, math.ceil((cfg.modesUnlockSeconds - playSeconds()) / 60))
 	local lastMode = view.lastMode or ""

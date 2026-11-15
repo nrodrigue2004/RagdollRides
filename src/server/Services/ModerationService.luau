@@ -24,6 +24,7 @@ local MapStats = require(Shared.MapStats)
 local Net = require(Shared.Net)
 
 local Services = script.Parent
+local Analytics = require(Services.Analytics)
 local DataService = require(Services.DataService)
 local MapPlayService = require(Services.MapPlayService)
 local MapService = require(Services.MapService)
@@ -185,9 +186,11 @@ local function onReport(player: Player, mapId: string, reason: string)
 	if not ok then
 		return
 	end
+	Analytics.event(player, "map_report", count, mapId, tostring(reason))
 	local finishers = (record.finishers or 0) + MapPlayService.pendingFinishers(mapId)
 	if MapStats.shouldHide(count, finishers) then
 		ModerationService.hide(mapId, string.format("%d reports, %d finishers", count, finishers), false)
+		Analytics.event(player, "map_hidden", count, mapId, "reports")
 	end
 end
 
@@ -251,6 +254,9 @@ local function onAdmin(player: Player, mapId: string, action: string)
 	end
 	local ok = run(mapId, record)
 	MapStore.forget(MapStore.MAPS, "M_" .. mapId)
+	if ok and (action == "hide" or action == "confirm") then
+		Analytics.event(player, "map_hidden", 1, mapId, "admin " .. action)
+	end
 	print(string.format("[Moderation] %s: %s on %s (%s)", player.Name, action, mapId, tostring(ok)))
 	Net.fire("Notice", player, if ok then "adminDone" else "adminFailed")
 end

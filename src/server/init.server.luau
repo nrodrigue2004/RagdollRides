@@ -13,6 +13,7 @@ local Net = require(Shared.Net)
 local Place = require(Shared.Place)
 
 local Services = script:WaitForChild("Services")
+local Analytics = require(Services.Analytics)
 local BoardService = require(Services.BoardService)
 local BoardStore = require(Services.BoardStore)
 local BrawlService = require(Services.BrawlService)
@@ -43,6 +44,7 @@ CollisionGroups.init()
 Net.initServer()
 DataService.init()
 EconomyService.init()
+Analytics.init() -- custom events and funnels (Creator Dashboard)
 
 local role = Place.role()
 if role == "Brawl" then

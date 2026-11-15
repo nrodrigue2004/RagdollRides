@@ -37,6 +37,7 @@ local ShopMath = require(Shared.ShopMath)
 local TracksMath = require(Shared.TracksMath)
 
 local Services = script.Parent
+local Analytics = require(Services.Analytics)
 local BoardStore = require(Services.BoardStore)
 local DataService = require(Services.DataService)
 local EconomyService = require(Services.EconomyService)
@@ -239,6 +240,7 @@ local function startRun(player: Player)
 		flagged = false,
 	}
 	runs[player] = run
+	Analytics.modeStep(player, Analytics.MODE.roundStart)
 	profile.flags.lastMode = "highway"
 	Net.fire("Highway.Start", player, {
 		run = run.id,
@@ -295,6 +297,7 @@ local function scored(player: Player, points: number)
 end
 
 local function reject(player: Player, run: Run, why: string)
+	Analytics.cheat(player, "highway_" .. why)
 	run.rejected += 1
 	if run.rejected >= cfg.rejectLimit and not run.flagged then
 		run.flagged = true
@@ -500,6 +503,7 @@ local function finishRun(player: Player, reason: string)
 	end
 	run.over = true
 	player:SetAttribute("HighwayRun", nil)
+	Analytics.modeStep(player, Analytics.MODE.roundEnd)
 	local profile = DataService.get(player)
 	if profile == nil then
 		return
@@ -580,6 +584,23 @@ local function finishRun(player: Player, reason: string)
 				else tostring(run.event and run.event.id),
 		})
 	end)
+	-- A friend's Beat my score card: beaten once this run's score passes it
+	local challenge: { [string]: any }? = nil
+	local flags = profile.flags
+	if (flags.challengeScore or 0) > 0 and not run.tutorial and reason ~= "left" then
+		local ok, name = pcall(function()
+			return Players:GetNameFromUserIdAsync(flags.challengeBy)
+		end)
+		challenge = {
+			score = flags.challengeScore,
+			name = if ok and type(name) == "string" then name else "Your friend",
+			beaten = s.score > flags.challengeScore,
+		}
+		if s.score > flags.challengeScore then
+			flags.challengeScore = 0
+			flags.challengeBy = 0
+		end
+	end
 	if player.Parent == Players then
 		Net.fire("Highway.End", player, {
 			run = run.id,
@@ -598,6 +619,7 @@ local function finishRun(player: Player, reason: string)
 			reason = reason,
 			tutorial = run.tutorial,
 			event = if run.tutorial then nil else run.event.id,
+			challenge = challenge,
 		})
 	end
 end
@@ -829,6 +851,7 @@ function HighwayService.init()
 	Net.on("Highway.Again", function(player: Player)
 		local run = runs[player]
 		if run == nil or run.over then
+			Analytics.modeStep(player, Analytics.MODE.requeue)
 			startRun(player)
 		end
 	end)

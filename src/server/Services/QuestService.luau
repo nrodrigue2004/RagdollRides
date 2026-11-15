@@ -24,6 +24,7 @@ local Quests = require(Shared.Quests)
 local StarterMaps = require(Shared.StarterMaps)
 
 local Services = script.Parent
+local Analytics = require(Services.Analytics)
 local BuilderService = require(Services.BuilderService)
 local DataService = require(Services.DataService)
 local EconomyService = require(Services.EconomyService)
@@ -80,6 +81,15 @@ function QuestService.event(player: Player, event: string, amount: number?, key:
 end
 
 local function answer(player: Player, result: { [string]: any })
+	if result.ok then
+		if result.id == "streak" then
+			Analytics.event(player, "streak_claim", result.day)
+		elseif result.id == "gift" then
+			Analytics.event(player, "gift", 1)
+		else
+			Analytics.event(player, "quest_claim", 1, result.id)
+		end
+	end
 	Net.fire("Shop.Result", player, result)
 end
 

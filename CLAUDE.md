@@ -1,0 +1,32 @@
+# CLAUDE.md: rules for this repo
+
+Read this first. Keep it short. Quality comes first; efficiency never means lower quality.
+
+## Project
+- What it is: **Ragdoll Rides**, a Roblox physics driving game (Tracks + map builder, Bumper Brawl, Highway Havoc). Game 1 of nate's 13-game Roblox lineup.
+- Source of truth for design: the build spec "Ragdoll Rides: Build Spec" (https://claude.ai/artifact/BTWzdUABUjnZoUMjq2dfoC). Never edit nate's docs; record any change to a spec number in `notes/Decisions.md`.
+- Stack: Luau, Rojo 7.4.4 project (`default.project.json`), tools pinned in `rokit.toml`. Owner: nate.
+- Commands:
+  - `rojo build default.project.json -o build/RagdollRides.rbxl` (build the place)
+  - `rojo serve` (live sync into Studio with the Rojo plugin)
+  - `lune run tests/run.luau build/RagdollRides.rbxl` (unit tests + place layout check)
+  - `selene src tests` and `stylua src tests` (lint and format)
+
+## Memory: read these, keep them current
+- `notes/Current Progress.md`: done / in progress / next. Under 20 lines. Read it at the start of every session.
+- `notes/Tasks.md`: milestones in order with their "done when" checks, plus what needs nate in Studio.
+- `notes/Decisions.md`: every design or technical decision, one line each with the date. Check it before changing direction.
+- `notes/Working Agreement.md`: how nate wants the work done.
+
+## Code map
+- `src/shared` (ReplicatedStorage.Shared): `Config` (every tuning number, pure data), `Net` + `NetSchema` + `Remotes` (all remotes, schema checks, rate limits), pure maths (`VehicleMath`, `Damage`, `PoseCodec`), `VehicleBuilder`, `Util/`.
+- `src/server` (ServerScriptService.Server): `Services/` (VehicleService, TestTrack, CollisionGroups).
+- `src/client` (StarterPlayerScripts.Client): `Controllers/` (VehicleController, RagdollClient, CameraController, InputController, HudController, JuiceService, SurfaceEffects, RemoteVehicles, DevPanel).
+- Pure modules have no Roblox types so `tests/run.luau` can run them in Lune.
+
+## Quality
+1. Extend what exists. Do not re-implement or restyle working systems, and do not revert nate's work.
+2. Shipped-game quality. No placeholders left unmarked: placeholder art is labelled PLACEHOLDER ART in code and listed in Tasks.
+3. Verify before saying done: lint clean, tests pass, place builds. Anything only Studio can prove goes on the Studio test list.
+4. Design pillars and north star (reach and revenue) apply to every decision. Cartoon only, no free text, nothing sold changes stats.
+5. Never download assets, spend money, or publish without nate's OK. Original characters only.

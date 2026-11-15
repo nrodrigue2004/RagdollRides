@@ -1,0 +1,4 @@
+std = "selene_roblox"
+
+[lints]
+shadowing = "allow"

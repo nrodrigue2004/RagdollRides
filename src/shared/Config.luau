@@ -8,7 +8,7 @@
 
 local Config = {}
 
-Config.Version = "0.6.0-m5"
+Config.Version = "0.7.0-m6"
 
 ---------------------------------------------------------------------------
 -- World
@@ -752,6 +752,111 @@ Config.Quests = {
 	streakOwnedCoins = 250, -- day 7 when you already own this week's cosmetic
 	giftCoins = 10,
 	liveModes = { "tracks" }, -- add "brawl" and "highway" when those modes ship (milestones 7 and 8)
+}
+
+---------------------------------------------------------------------------
+-- Hub, rounds, quick races, parties, leaderboards (spec: Core loop, Hub and menus, Tracks: quick race,
+-- Round state machine). Every number is (tune).
+---------------------------------------------------------------------------
+-- Tumble Park plaza: drive around it; drive into a stall to open its screen.
+Config.Hub = {
+	origin = { -4000, 0, 0 },
+	size = 360, -- the plaza is a square this wide (studs)
+	spawn = { 0, 0, 120 }, -- relative to the origin, facing -Z (toward the mode gates)
+	-- Stalls you drive into (relative to the origin; size x, z). opens: the screen it opens.
+	zones = {
+		{
+			id = "tracks",
+			label = "TRACKS",
+			pos = { -90, 0, -110 },
+			size = { 44, 24 },
+			color = { 86, 170, 255 },
+		},
+		{
+			id = "brawl",
+			label = "BUMPER BRAWL",
+			pos = { 0, 0, -130 },
+			size = { 44, 24 },
+			color = { 255, 120, 90 },
+		},
+		{
+			id = "highway",
+			label = "HIGHWAY HAVOC",
+			pos = { 90, 0, -110 },
+			size = { 44, 24 },
+			color = { 255, 200, 60 },
+		},
+		{
+			id = "race",
+			label = "RACE PAD",
+			pos = { -120, 0, 20 },
+			size = { 36, 36 },
+			color = { 80, 210, 110 },
+		},
+		{
+			id = "garage",
+			label = "GARAGE",
+			pos = { 130, 0, 10 },
+			size = { 30, 24 },
+			color = { 190, 195, 205 },
+		},
+		{ id = "shop", label = "SHOP", pos = { 130, 0, 70 }, size = { 30, 24 }, color = { 255, 150, 200 } },
+		{
+			id = "builder",
+			label = "WORKSHOP",
+			pos = { -120, 0, 90 },
+			size = { 30, 24 },
+			color = { 150, 80, 220 },
+		},
+	},
+	-- Brawl and Highway cards show a silhouette until this much play time (spec: until minute 7 of
+	-- the first session); after that they show their mode (Coming soon until milestones 7 and 8).
+	modesUnlockSeconds = 420,
+	zoneCooldown = 3, -- a stall opens again only after you leave it for this long
+	countsInterval = 30, -- each server writes its live player counts this often (MemoryStore)
+	countsExpiry = 90,
+	countsStore = "LiveCounts_v1",
+}
+
+-- Mode places (Creator Dashboard place ids; 0 until those places exist: the card says Coming soon)
+Config.Places = {
+	brawlCasual = 0,
+	brawlRanked = 0,
+	highwayCoop = 0,
+	highwayVersus = 0,
+	teleportRetries = 3,
+}
+
+-- The round state machine (spec: Lobby -> Countdown -> Play -> Results -> Requeue) for quick races.
+-- Lobby: starts lobbyFill s after the 2nd player joins, or at once when full.
+Config.Race = {
+	minPlayers = 2,
+	maxPlayers = 8,
+	lobbyFill = 10,
+	countdown = 3, -- cars steerable but held
+	playMax = 180,
+	afterFirstFinish = 20,
+	results = 6, -- skippable
+	requeue = 8, -- auto-requeue: back in the lobby unless you leave
+	placeCoins = { 80, 60, 45, 35, 25, 20, 15, 10 },
+	dnfCoins = 10,
+	slotOrigin = { -9000, 0, 0 },
+	slotSpacing = 1300, -- along -Z
+	maxRaces = 4, -- races at once per server
+	gridSpacing = 7, -- studs between cars on the start grid
+}
+
+Config.Party = {
+	maxSize = 4,
+	inviteExpiry = 60, -- seconds an invite stays open
+}
+
+-- Map leaderboards (spec: MapTimes_v1, OrderedDataStore per map and week; lower is better)
+Config.Boards = {
+	storeName = "MapTimes_v1",
+	topCount = 10,
+	friendsPool = 100, -- the Friends tab picks friends from the all-time top 100 (one read)
+	cacheSeconds = 60,
 }
 
 -- Badges (Creator Dashboard ids; 0 until nate creates them)

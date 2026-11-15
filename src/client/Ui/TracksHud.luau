@@ -172,6 +172,8 @@ export type Callbacks = {
 	onShop: (() -> ())?,
 	onGarage: (() -> ())?,
 	onQuests: (() -> ())?,
+	onHub: (() -> ())?,
+	onTop: (() -> ())?,
 }
 
 function TracksHud.build(parentGui: ScreenGui, resetButton: GuiObject?, callbacks: Callbacks)
@@ -194,6 +196,32 @@ function TracksHud.build(parentGui: ScreenGui, resetButton: GuiObject?, callback
 	list.Padding = UDim.new(0, 8)
 	list.SortOrder = Enum.SortOrder.LayoutOrder
 	list.Parent = topLeft
+	-- HUB first (spec: top left, in every mode); hidden until Pip's Hill is done and while in the hub
+	local onHub = callbacks.onHub
+	if onHub then
+		local hub = Instance.new("TextButton")
+		hub.Name = "Hub"
+		hub.Text = "HUB"
+		hub.Font = FONT
+		hub.TextScaled = true
+		hub.TextColor3 = INK
+		hub.BackgroundColor3 = GOLD
+		hub.SizeConstraint = Enum.SizeConstraint.RelativeYY
+		hub.Size = UDim2.fromScale(1.6, 1)
+		hub.LayoutOrder = 0
+		hub.Visible = false
+		local hubMin = Instance.new("UISizeConstraint")
+		hubMin.MinSize = Vector2.new(Config.UI.minTapTarget, 40)
+		hubMin.Parent = hub
+		local hubPad = Instance.new("UIPadding")
+		hubPad.PaddingTop = UDim.new(0.2, 0)
+		hubPad.PaddingBottom = UDim.new(0.2, 0)
+		hubPad.Parent = hub
+		corner(hub, 0.5)
+		stroke(hub)
+		hub.Parent = topLeft
+		hub.Activated:Connect(onHub)
+	end
 	coinsLabel = pill("Coins", "●", GOLD, 1)
 	starsLabel = pill("Stars", "★", GOLD, 2)
 
@@ -228,7 +256,7 @@ function TracksHud.build(parentGui: ScreenGui, resetButton: GuiObject?, callback
 	topLeft:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeGoal)
 	placeGoal()
 
-	-- Left column under the goal bar: SHOP, GARAGE, QUESTS (the hub's stalls replace them in milestone 6)
+	-- Left column under the goal bar: SHOP, GARAGE, QUESTS (the hub's stalls open the same screens)
 	local column = Instance.new("Frame")
 	column.Name = "LeftColumn"
 	column.BackgroundTransparency = 1
@@ -326,7 +354,13 @@ function TracksHud.build(parentGui: ScreenGui, resetButton: GuiObject?, callback
 	maps.Activated:Connect(callbacks.onMaps)
 	local build = squareButton(buttonsFrame, "Build", "BUILD", 2)
 	build.Activated:Connect(callbacks.onBuild)
-	local cog = squareButton(buttonsFrame, "Settings", "⚙", 3)
+	local onTop = callbacks.onTop
+	if onTop then
+		local top = squareButton(buttonsFrame, "Top", "TOP", 3)
+		top.Activated:Connect(onTop)
+		top.Visible = false
+	end
+	local cog = squareButton(buttonsFrame, "Settings", "⚙", 4)
 	cog.Activated:Connect(callbacks.onSettings)
 	local function placeButtons()
 		if resetButton then
@@ -359,10 +393,116 @@ function TracksHud.setDot(name: string, visible: boolean)
 end
 
 function TracksHud.setButtonVisible(name: string, visible: boolean)
-	local b = buttonsFrame and buttonsFrame:FindFirstChild(name) :: GuiObject?
+	local b = (
+		buttonsFrame and buttonsFrame:FindFirstChild(name) or root and root:FindFirstChild(name, true)
+	) :: GuiObject?
 	if b then
 		b.Visible = visible
 	end
+end
+
+-- The quest tracker (spec: top right, collapsible: 3 daily quests with live counts). Tap to fold it.
+export type TrackerRow = { text: string, progress: number, target: number, claimed: boolean }
+local tracker: Frame? = nil
+local trackerOpen = true
+local trackerRows: { TrackerRow } = {}
+
+local function drawTracker()
+	local frame = tracker
+	if frame == nil then
+		return
+	end
+	for _, child in frame:GetChildren() do
+		if child:IsA("TextLabel") and child.Name ~= "Header" then
+			child:Destroy()
+		end
+	end
+	local header = frame:FindFirstChild("Header") :: TextButton
+	local done = 0
+	for _, row in trackerRows do
+		if row.claimed or row.progress >= row.target then
+			done += 1
+		end
+	end
+	header.Text = string.format("QUESTS %d/%d %s", done, #trackerRows, if trackerOpen then "▴" else "▾")
+	if not trackerOpen then
+		return
+	end
+	for index, row in trackerRows do
+		local ready = not row.claimed and row.progress >= row.target
+		local label = text(
+			frame,
+			"Row" .. index,
+			string.format(
+				"%s  %s",
+				row.text,
+				if row.claimed
+					then "✓"
+					else string.format("%d/%d", math.min(row.progress, row.target), row.target)
+			),
+			if ready then GOLD elseif row.claimed then Color3.fromRGB(170, 230, 180) else WHITE
+		)
+		label.LayoutOrder = index
+		label.TextXAlignment = Enum.TextXAlignment.Right
+		label.Size = UDim2.new(1, 0, 0.22, 0)
+		outlined(label, 2)
+	end
+end
+
+function TracksHud.setQuestTracker(rows: { TrackerRow }?)
+	if root == nil then
+		return
+	end
+	if rows == nil or #rows == 0 then
+		if tracker then
+			tracker.Visible = false
+		end
+		return
+	end
+	trackerRows = rows
+	if tracker == nil then
+		local frame = Instance.new("Frame")
+		frame.Name = "QuestTracker"
+		frame.BackgroundTransparency = 1
+		frame.AnchorPoint = Vector2.new(1, 0)
+		frame.Size = UDim2.fromScale(0.3, 0.2)
+		frame.Parent = root
+		local list = Instance.new("UIListLayout")
+		list.SortOrder = Enum.SortOrder.LayoutOrder
+		list.HorizontalAlignment = Enum.HorizontalAlignment.Right
+		list.Padding = UDim.new(0, 2)
+		list.Parent = frame
+		local header = Instance.new("TextButton")
+		header.Name = "Header"
+		header.BackgroundTransparency = 1
+		header.Font = FONT
+		header.TextScaled = true
+		header.TextColor3 = WHITE
+		header.TextXAlignment = Enum.TextXAlignment.Right
+		header.Size = UDim2.new(1, 0, 0.24, 0)
+		header.LayoutOrder = 0
+		local headerStroke = Instance.new("UIStroke")
+		headerStroke.Thickness = 2
+		headerStroke.Color = INK
+		headerStroke.Parent = header
+		header.Parent = frame
+		header.Activated:Connect(function()
+			trackerOpen = not trackerOpen
+			drawTracker()
+		end)
+		local function place()
+			local y = buttonsFrame.AbsolutePosition.Y
+				- gui.AbsolutePosition.Y
+				+ buttonsFrame.AbsoluteSize.Y * 0.75
+			frame.Position = UDim2.new(1, -16, 0, y + 6)
+		end
+		buttonsFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(place)
+		buttonsFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(place)
+		place()
+		tracker = frame
+	end
+	(tracker :: Frame).Visible = true
+	drawTracker()
 end
 
 function TracksHud.setWallet(coins: number, stars: number, goal: Goal?)

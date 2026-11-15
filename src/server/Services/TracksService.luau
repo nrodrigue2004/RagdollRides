@@ -1,7 +1,9 @@
 -- TracksService: the Tracks free-run loop on the server (spec: Tracks, Anti-exploit, Onboarding).
 -- * Builds the starter maps and puts each player on one (a first-time player lands straight on Pip's
---   Hill, with no menu first). Map.Go moves a player to a starter map (the browse screen's STARTER tab;
---   the hub is milestone 6). Published player maps are loaded and entered by MapPlayService.
+--   Hill, with no menu first; a returning player opens on the Tumble Park hub). Map.Go moves a player
+--   to a starter map or the hub ("hub", no runs there). Published player maps are loaded and entered by
+--   MapPlayService; quick race copies of starter maps by RaceService (def.race: the server starts every
+--   racer's run at GO, and RaceService.finish decides the result).
 -- * Signals for the map services: MapChanged (who is on which map), RunStarted (plays), Finished
 --   (finishers). A builder TEST map (def.testOwner) goes to BuilderService's customFinish instead of pay.
 -- * Runs: Run.Start, Run.Checkpoint and Run.Finish are timed on the server's own clock. A checkpoint
@@ -39,9 +41,12 @@ local TracksService = {}
 
 TracksService.MapChanged = Signal.new() -- (player, mapId or nil)
 TracksService.RunStarted = Signal.new() -- (player, map)
-TracksService.Finished = Signal.new() -- (player, map, firstFinish, { tier, isBest, trailCoins }): a paid finish
+TracksService.Finished = Signal.new() -- (player, map, firstFinish, { tier, isBest, trailCoins, ms }): a paid finish
+TracksService.RunRejected = Signal.new() -- (player, mapId, reason): a run that will not count
 
 local TEST_TRACK = "test_track" -- Studio and admins: the milestone 1 test track, for the dev panel tests
+local HUB = "hub" -- the Tumble Park plaza (HubService builds it): drive around, no runs
+TracksService.HUB = HUB
 
 type Run = TracksMath.RunRecord & {
 	splits: { number }, -- the driver's timer at each checkpoint (ms), for the split display
@@ -74,6 +79,8 @@ local mapDefs: { [string]: StarterMaps.MapDef } = table.clone(StarterMaps.byId)
 -- A finished run on a builder map: the owning service decides what it means (a TEST records the
 -- creator time; published maps pay in milestone 4). Returns the Run.Result fields.
 TracksService.customFinish = nil :: ((Player, StarterMaps.MapDef, number) -> { [string]: any })?
+-- A finished quick race run (RaceService): returns the Run.Result fields
+TracksService.raceFinish = nil :: ((Player, StarterMaps.MapDef, number) -> { [string]: any })?
 
 local function worldPoint(map: StarterMaps.MapDef, x: number, y: number, z: number): Vector3
 	local wx, wy, wz = StarterMaps.toWorld(map, x, y, z)
@@ -108,8 +115,8 @@ function TracksService.currentMap(player: Player): string?
 	return playerMap[player]
 end
 
--- The map a joining player starts on: the first starter map they have not reached Gold on yet
-local function homeMap(profile: { [string]: any }?): string
+-- The next starter map for a player: the first one they have not reached Gold on yet
+local function nextStarter(profile: { [string]: any }?): string
 	if profile == nil or not profile.tut.pipHill then
 		return StarterMaps.FIRST_MAP
 	end
@@ -121,9 +128,31 @@ local function homeMap(profile: { [string]: any }?): string
 	end
 	return StarterMaps.FIRST_MAP
 end
+TracksService.nextStarter = nextStarter
+
+-- Where a joining player starts: Pip's Hill until it is finished (no menu, no teleport before the first
+-- win), then the hub (spec: returning sessions open on the hub)
+local function homeMap(profile: { [string]: any }?): string
+	if profile == nil or not profile.tut.pipHill then
+		return StarterMaps.FIRST_MAP
+	end
+	return HUB
+end
 
 function TracksService.homeMapFor(player: Player): string
 	return homeMap(DataService.get(player))
+end
+
+-- The hub's spawn row: cars side by side facing the mode gates, spread so nobody lands on anyone
+local hubSpawnCount = 0
+local function hubSpawn(): CFrame
+	hubSpawnCount += 1
+	local cfg = Config.Hub
+	local column = (hubSpawnCount - 1) % 8
+	local o = cfg.origin
+	local p = cfg.spawn
+	local position = Vector3.new(o[1] + p[1] + (column - 3.5) * 10, o[2] + p[2], o[3] + p[3])
+	return CFrame.lookAt(position, position + Vector3.new(0, 0, -1))
 end
 
 local function sendGhost(player: Player, mapId: string)
@@ -132,20 +161,23 @@ local function sendGhost(player: Player, mapId: string)
 	Net.fire("Run.Ghost", player, mapId, ghost)
 end
 
--- Put a player on a map: their car at its start, no run until they drive off
-function TracksService.enterMap(player: Player, mapId: string)
+-- Put a player on a map: their car at its start (or at `at`: a race grid slot), no run until they
+-- drive off
+function TracksService.enterMap(player: Player, mapId: string, at: CFrame?)
 	if player.Parent ~= Players then
 		return
 	end
 	local cf: CFrame
 	if mapId == TEST_TRACK then
 		cf = TestTrack.spawnCFrame(1)
+	elseif mapId == HUB then
+		cf = hubSpawn()
 	else
 		local map = mapDefs[mapId]
 		if map == nil then
 			return
 		end
-		cf = MapBuilder.startCFrame(map)
+		cf = at or MapBuilder.startCFrame(map)
 	end
 	runs[player] = nil
 	-- Stream the start in first so the car never lands before the road exists on the player's device
@@ -166,9 +198,53 @@ function TracksService.enterMap(player: Player, mapId: string)
 		vehicleId = profile.equippedVehicle
 	end
 	VehicleService.spawn(player, vehicleId, cf)
-	if mapId ~= TEST_TRACK and not (mapDefs[mapId] :: any).testOwner then
+	if mapId == HUB or mapId == TEST_TRACK then
+		return
+	end
+	local def = mapDefs[mapId] :: any
+	if profile and not def.testOwner then
+		-- The hub's mode card that glows next session
+		profile.flags.lastMode = if def.race then "race" else "tracks"
+	end
+	if not def.testOwner and not def.race then
 		sendGhost(player, mapId)
 	end
+end
+
+-- Quick races: every racer's run starts on the server at GO (the client's Run.Start is ignored)
+function TracksService.startRun(player: Player, mapId: string)
+	local map = mapDefs[mapId]
+	if map == nil or playerMap[player] ~= mapId then
+		return
+	end
+	speedHistory[player] = nil
+	runs[player] = {
+		mapId = mapId,
+		startTime = os.clock(),
+		checkpoints = {},
+		checkpointCount = map.checkpoints,
+		speedFlags = 0,
+		splits = {},
+		samples = {},
+		sampleClock = 0,
+		valid = true,
+		reason = nil,
+	}
+	lastPositions[player] = nil
+end
+
+-- A run's progress (quick race positions): checkpoints reached and when the last one was
+function TracksService.progress(player: Player): (number, number)
+	local run = runs[player]
+	if run == nil then
+		return 0, 0
+	end
+	local count, last = 0, 0
+	for _, at in run.checkpoints do
+		count += 1
+		last = math.max(last, at)
+	end
+	return count, last
 end
 
 -- Off every map (the builder): no runs until the next enterMap
@@ -217,7 +293,7 @@ end
 
 local function onStart(player: Player, mapId: string)
 	local map = mapDefs[mapId]
-	if map == nil or playerMap[player] ~= mapId then
+	if map == nil or playerMap[player] ~= mapId or (map :: any).race then
 		return
 	end
 	speedHistory[player] = nil
@@ -264,14 +340,17 @@ end
 
 local function rejectResult(player: Player, mapId: string, reason: string)
 	local map = mapDefs[mapId]
+	TracksService.RunRejected:Fire(player, mapId, reason)
 	if map == nil or not map.custom then
 		noteReject(player, reason) -- a creator testing their own map is never board-banned for it
 	end
-	Net.fire(
-		"Run.Result",
-		player,
-		{ ok = false, mapId = mapId, reason = reason, nextMap = StarterMaps.nextMap(mapId) }
-	)
+	Net.fire("Run.Result", player, {
+		ok = false,
+		mapId = mapId,
+		reason = reason,
+		nextMap = StarterMaps.nextMap(mapId),
+		race = if map and (map :: any).race then true else nil,
+	})
 end
 
 local function onFinish(player: Player, mapId: string, clientTime: number, trailCoins: number)
@@ -304,10 +383,9 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 	if math.abs(clientTime - elapsed) > 1 then
 		warn(string.format("[Tracks] %s timer off by %.2f s on %s", player.Name, clientTime - elapsed, mapId))
 	end
-	if (map :: any).testOwner then
-		local result = if TracksService.customFinish
-			then TracksService.customFinish(player, map, time)
-			else {}
+	if (map :: any).testOwner or (map :: any).race then
+		local handler = if (map :: any).race then TracksService.raceFinish else TracksService.customFinish
+		local result = if handler then handler(player, map, time) else {}
 		result.ok = if result.ok == nil then true else result.ok
 		result.mapId = mapId
 		result.time = time
@@ -393,6 +471,7 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 		tier = payout.tier,
 		isBest = payout.isBest,
 		trailCoins = math.clamp(trailCoins, 0, map.coins),
+		ms = math.floor(time * 1000 + 0.5),
 	})
 end
 
@@ -522,6 +601,9 @@ function TracksService.init()
 
 	VehicleService.homeFor = function(player: Player): CFrame?
 		local mapId = playerMap[player]
+		if mapId == HUB then
+			return hubSpawn()
+		end
 		local map = mapId and mapDefs[mapId]
 		if map then
 			return MapBuilder.startCFrame(map)
@@ -540,7 +622,11 @@ function TracksService.init()
 	Net.on("Run.Checkpoint", onCheckpoint)
 	Net.on("Run.Finish", onFinish)
 	Net.on("Map.Go", function(player: Player, mapId: string)
-		if StarterMaps.byId[mapId] or (mapId == TEST_TRACK and DataService.isAdmin(player)) then
+		if
+			StarterMaps.byId[mapId]
+			or mapId == HUB
+			or (mapId == TEST_TRACK and DataService.isAdmin(player))
+		then
 			TracksService.enterMap(player, mapId)
 		end
 	end)

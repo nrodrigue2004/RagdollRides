@@ -9,7 +9,7 @@ Milestones in spec order (numbers as in the spec). Each one is done when its spe
 4. **3 Map builder**: code done 2026-11-15. Done when: spec "Tracks and builder" checks pass for the builder (build, save, reload and play a map in under 10 minutes; limits enforced by the server; publish gates; preset names only).
 5. **4 Browse and safety**: code done 2026-11-15. Browse tabs, play published maps with pay and royalties, ratings, Popular ranking, reports, auto-hide, strikes and bans, admin tools. Done when: spec "Browse and safety" checks pass (a published map shows in Newest and plays for a second player with pay; 15 counted reports from over 25% of its finishers hide it until an admin looks; the third admin-confirmed hide in 90 days bans publishing for 7 days; ratings move Popular).
 6. **5 Shop, passes, quests and streak**: code done 2026-11-15. Shop (daily spotlight, coins, passes, Crash Crate with odds on the card), garage (cars, 7 look slots, rider, rebirth), mastery, Robux passes and products with one receipt handler, daily and weekly quests, the daily chest, the 7-day streak, gifts, the one-time Starter Pack offer. Done when: spec "Economy" checks pass (every purchase grants once and survives a rejoin; nothing sold changes handling; the crate odds match the card over 20,000 rolls (unit test); a new player earns their first shop look inside 15 minutes), and nate has created the passes, products and rebirth badge in the Creator Dashboard (ids in Config.Monetization and Config.Badges).
-7. **6 Hub and round manager, plus the party queue** (quick races fit here).
+7. **6 Hub and round manager, plus the party queue**: code done 2026-11-15. Tumble Park hub plaza with stalls and mode gates, the mode picker with live counts, HUB button, the round state machine (RoundManager on Shared/Round), Tracks quick races on the race pad, parties of friends, map leaderboards (Friends / Weekly / All-time), the quest tracker. Done when: a returning player opens on the hub and is driving a mode in one tap; 2 to 8 players race on the race pad with places paid (80 / 60 / ... / DNF 10) and auto-requeue; a party of 2 queues together; a new best shows on the map's All-time and Weekly boards for a second player; live counts move within a minute on a live server.
 8. **7 Bumper Brawl**. Done when: spec "Bumper Brawl" checks pass.
 9. **8 Highway Havoc**.
 10. **9 Polish and launch**: the juice pass, analytics review and the launch checklist.
@@ -103,6 +103,24 @@ Milestone 5 (shop, garage, quests; DEV → Pick + GRANT gives any pass or produc
 - [ ] Buy something, leave and rejoin: it is still owned. A Robux purchase in a live test (after ids exist) is granted once even if you leave during the prompt.
 - [ ] Phone: shop tabs scroll sideways, cards and claim buttons are easy to tap.
 
+Milestone 6 (hub, quick races, parties, boards; races need 2 players: Test → Clients and Servers → 2 players):
+- [ ] A fresh save still starts on Pip's Hill with no HUB button. After the finish, HUB shows top left (gold, before the coins).
+- [ ] Leave and play again (not a fresh save): you spawn in Tumble Park facing the 3 gates, and the mode picker opens with the TRACKS card glowing. PLAY (Free Run) drives your next starter map in one tap.
+- [ ] DRIVE AROUND closes the picker; PLAY ▸ (top centre) opens it again. Drive around the plaza: foam walls, 3 kicker ramps, the Tumble Tower in a corner.
+- [ ] Drive into each stall: GARAGE opens the garage, SHOP the shop, WORKSHOP the builder slot picker, the TRACKS / BRAWL / HIGHWAY gates open the picker. A stall opens again only after you drive out for 3 s.
+- [ ] Bumper Brawl and Highway Havoc cards show "?????" and "Opens in N min" until 7 minutes of total play, then their names with COMING SOON; PLAY says "Coming soon! This mode is being built." RANKED and VERSUS chips are locked.
+- [ ] The cards show "● N playing"; with API access on (MemoryStore) it updates every 30 s.
+- [ ] Quick race: both players drive onto the RACE PAD (or TRACKS → QUICK RACE → PLAY). The pill says "QUICK RACE 2/8 · starts in 10" with LEAVE; leaving the hub (MAPS, BUILD) leaves the queue.
+- [ ] At 0 the cars appear on a 4 x 2 grid on a starter map copy (never Pip's Hill), held: steering works, gas does not. 3, 2, 1, GO! The timer starts at GO.
+- [ ] Racers bump each other (solid, fully visible); a free-run player on the same starter map elsewhere stays a ghost. Damage dents but never changes handling and never explodes (looks-only), and Vehicle swaps are blocked ("Finish the race first!").
+- [ ] The pill shows your place ("1st of 2") as checkpoints are reached. Finishing pops "FINISHED 1ST!". The race ends 20 s after the first finisher (or when both finish).
+- [ ] Results card: YOU WON! / 2ND PLACE!, both names and times, "+80 coins" (2nd: +60; a DNF: +10). RACE AGAIN ▶ 6 then both are back in the hub and queued for the next race; LEAVE stops that.
+- [ ] HUB mid-race: the first tap says "Tap HUB again to leave the race", the second takes you to the hub (no pay).
+- [ ] Party: in the picker tap PLAY WITH FRIENDS: PARTY (needs 2 accounts that are Roblox friends, so a live test): INVITE a friend; they get "X invites you to their party!" with JOIN. The party strip shows both names. The leader joining a quick race brings the friend into the queue too. LEAVE PARTY ends it.
+- [ ] TOP (top right, on any map): the board opens on ALL-TIME with your time pinned at the bottom (gold). Finish faster: the new time shows after reopening (within a minute). WEEKLY and FRIENDS tabs switch. In Studio without API access the boards work in memory for the session.
+- [ ] Quest tracker (top right, under the buttons): QUESTS n/3 with today's 3 quests and live counts; ready ones are gold; tap the header to fold it.
+- [ ] Phone: the HUB button, picker cards, chips and race pill are easy to tap; nothing covers the driving buttons while racing.
+
 ## Placeholder art and sound
 - PLACEHOLDER ART: all 6 vehicle bodies (VehicleBuilder BODIES blockouts), the rider rig and face, test track parts.
 - PLACEHOLDER ART: dented and crushed panel looks (procedural push-in and darken; real looks go in ReplicatedStorage.Assets.PanelLooks), cracked glass (frosted, no decal), smoke, flame, glitter and explosion particles (built-in textures), explosion glow and ring (neon parts).
@@ -114,3 +132,5 @@ Milestone 5 (shop, garage, quests; DEV → Pick + GRANT gives any pass or produc
 - PLACEHOLDER ART: browse cards (plain frames, a sketch made of flat coloured frames, text badges), the rating stars and report flag (text glyphs).
 - PLACEHOLDER ART: shop, garage and quest screens (flat cards, colour swatches, text glyphs for coins, stars and Robux), the crate box and reveal (a shaking frame), look parts (spoiler, bull bar, roof rack, fins, decal strips and mastery badge are plain blocks), hats (blocks and cylinders), trails (plain colour Roblox Trails).
 - Horns have no sound (HORNS can be equipped; the honk plays nothing until sounds are picked). Rider Pass emotes are granted and saved but there is no emote wheel yet (milestone 9 polish).
+- PLACEHOLDER ART: Tumble Park (flat plaza, foam walls, stall pads and sign arches, kicker wedges, the Tumble Tower of stacked blocks), the mode picker cards (flat colours; locked cards a grey silhouette with "?????"), the race pill and results card, the party and leaderboard panels. The Wobble Bot loading toy for teleports arrives with the mode places (milestones 7 and 8).
+- Not built yet: the Tumble Tower's Park Party meter (the spec names it but gives no rules; it waits for a design), the harder star-rated map tier after a rebirth (needs curated maps), Featured player maps in quick races (starter maps only for now).

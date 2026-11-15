@@ -11,7 +11,7 @@
 -- * Ratings (1 to 5 stars) only after finishing the map, never your own; a player can change theirs.
 -- Plays, finishers and ratings are batched per map and written every minute (MapService.updateRecord);
 -- the Popular index is rewritten every 10 minutes for the maps that changed (MapStats.popularScore).
--- Leaderboards per map come with milestone 6 (the record's boardEpoch is ready for them).
+-- Leaderboards per map: BoardService (the map definition carries the record's boardEpoch).
 
 local Players = game:GetService("Players")
 
@@ -165,6 +165,7 @@ local function ensureLoaded(mapId: string, record: MapService.MapRecord): (Loade
 		fullDamage = MapCodec.fullDamage(map),
 	})
 	def.owner = record.owner
+	def.boardEpoch = record.boardEpoch or 0
 	local model = MapBuilder.buildAsync(def :: any, Config.Builder.buildBatch)
 	if model == nil then
 		loading[mapId] = nil

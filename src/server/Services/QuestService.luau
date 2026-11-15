@@ -26,6 +26,7 @@ local BuilderService = require(Services.BuilderService)
 local DataService = require(Services.DataService)
 local EconomyService = require(Services.EconomyService)
 local MapPlayService = require(Services.MapPlayService)
+local RaceService = require(Services.RaceService)
 local ShopService = require(Services.ShopService)
 local TracksService = require(Services.TracksService)
 
@@ -218,6 +219,12 @@ function QuestService.init()
 		end
 		if (info.trailCoins or 0) > 0 then
 			QuestService.event(player, "trailCoins", info.trailCoins)
+		end
+	end)
+	-- A finished quick race counts as a finished run
+	RaceService.Finished:Connect(function(player: Player, _place: number, dnf: boolean)
+		if not dnf then
+			QuestService.event(player, "finish", 1)
 		end
 	end)
 	MapPlayService.Rated:Connect(function(player: Player)

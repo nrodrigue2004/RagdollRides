@@ -44,6 +44,8 @@ local ORDER = {
 	{ "Builder", "BuilderClient" },
 	{ "Browse", "BrowseClient" },
 	{ "Shop", "ShopClient" },
+	{ "Race", "RaceClient" },
+	{ "Hub", "HubClient" },
 	{ "Dev", "DevPanel" },
 }
 

@@ -672,6 +672,12 @@ end
 local function updateDots(v: { [string]: any })
 	TracksHud.setDot("Quests", questsReady(v))
 	TracksHud.setDot("Garage", garageDot)
+	-- The quest tracker (top right): today's 3 with live counts
+	local rows = {}
+	for _, q in (v.quests and v.quests.daily) or {} do
+		table.insert(rows, { text = q.text, progress = q.progress, target = q.target, claimed = q.claimed })
+	end
+	TracksHud.setQuestTracker(rows)
 end
 
 local function headerLine(v: { [string]: any }): string

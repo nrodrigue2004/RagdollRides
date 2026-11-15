@@ -83,6 +83,16 @@ function InputController.setOverride(snapshot: Snapshot?)
 	override = snapshot
 end
 
+-- Held at a start line (a quick race countdown): steering works, gas does not, the brake is on
+local held = false
+function InputController.setHold(on: boolean)
+	held = on
+end
+
+function InputController.isHeld(): boolean
+	return held
+end
+
 function InputController.lastDevice(): string
 	return lastDevice
 end
@@ -133,6 +143,10 @@ function InputController.read(dt: number): Snapshot
 		lean = stickLean
 	end
 
+	if held then
+		throttle = 0
+		brake = 1
+	end
 	return {
 		throttle = throttle,
 		brake = brake,

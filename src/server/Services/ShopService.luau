@@ -19,6 +19,7 @@ local ShopMath = require(Shared.ShopMath)
 local Services = script.Parent
 local DataService = require(Services.DataService)
 local EconomyService = require(Services.EconomyService)
+local RaceService = require(Services.RaceService)
 local TracksService = require(Services.TracksService)
 local VehicleService = require(Services.VehicleService)
 
@@ -260,6 +261,11 @@ function ShopService.init()
 	Net.on("Garage.Equip", onEquip)
 	TracksService.Finished:Connect(function(player: Player, map: any)
 		if not map.testOwner then
+			ShopService.addMastery(player, Config.Progression.masteryPoints.tracksFinish)
+		end
+	end)
+	RaceService.Finished:Connect(function(player: Player, _place: number, dnf: boolean)
+		if not dnf then
 			ShopService.addMastery(player, Config.Progression.masteryPoints.tracksFinish)
 		end
 	end)

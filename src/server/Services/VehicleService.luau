@@ -25,6 +25,10 @@ VehicleService.Spawned = Signal.new() -- (player, model)
 VehicleService.homeFor = nil :: ((Player) -> CFrame?)?
 -- Called when a player joins instead of spawning a car on the test track (TracksService sets it)
 VehicleService.onJoin = nil :: ((Player) -> ())?
+-- A player's collision group when it is not the mode's default (RaceService: racers bump each other)
+VehicleService.collisionGroupFor = nil :: ((Player) -> string?)?
+-- True while a player may not swap cars (RaceService: during a race)
+VehicleService.equipLocked = nil :: ((Player) -> boolean)?
 
 local vehiclesFolder: Folder
 local vehicles: { [Player]: Model } = {}
@@ -83,7 +87,10 @@ function VehicleService.spawn(player: Player, vehicleId: string, at: CFrame?)
 	model:SetAttribute("SpawnCFrame", yawOnly(spawnCFrame))
 	-- Tracks free runs: other players' cars pass through each other (spec: Tracks > ghosts)
 	local mode = workspace:GetAttribute("Mode")
-	if mode == "Tracks" then
+	local group = VehicleService.collisionGroupFor and VehicleService.collisionGroupFor(player)
+	if group then
+		chassis.CollisionGroup = group
+	elseif mode == "Tracks" then
 		chassis.CollisionGroup = "Ghost"
 	end
 
@@ -155,6 +162,10 @@ function VehicleService.init()
 
 	Net.on("Vehicle.Equip", function(player: Player, vehicleId: string)
 		if not VehicleService.mayDrive(player, vehicleId) then
+			return
+		end
+		if VehicleService.equipLocked and VehicleService.equipLocked(player) then
+			Net.fire("Notice", player, "equipLocked")
 			return
 		end
 		local profile = DataService.get(player)

@@ -43,6 +43,8 @@ local TracksClient = {}
 
 -- A builder test ended: { ok, time, test = true } from the server, or { practice = true, time }
 TracksClient.TestFinished = Signal.new()
+-- A quick race run's answer (Run.Result with race = true): RaceClient shows it
+TracksClient.RaceRun = Signal.new()
 
 local COIN_RADIUS = 7
 local COIN_STREAK_GAP = 1.2 -- pickups closer together than this climb in pitch
@@ -259,8 +261,8 @@ end
 
 local function startRun()
 	local current = map
-	if current == nil then
-		return
+	if current == nil or (current :: any).race then
+		return -- a quick race starts at GO (TracksClient.startRace)
 	end
 	runState = "running"
 	startClock = os.clock()
@@ -428,6 +430,9 @@ local function finishRun(finishPart: BasePart)
 		return
 	end
 	Net.send("Run.Finish", current.id, finishTime, coinCount)
+	if (current :: any).race then
+		return -- RaceClient shows the place, then the race results
+	end
 	-- No answer (a dropped request): say so rather than leave the player waiting
 	resultToken += 1
 	local token = resultToken
@@ -616,20 +621,56 @@ local function watchTag(tag: string, store: { [BasePart]: CFrame }, onAdded: ((B
 	end
 end
 
--- Other players' cars and riders are see-through in Tracks
+-- Other players' cars and riders are see-through in Tracks, except the cars racing you
+local remoteModels: { [Model]: boolean } = {}
+
+local function inMyRace(model: Model): boolean
+	local raceId = LocalPlayer:GetAttribute("RaceId")
+	if raceId == nil then
+		return false
+	end
+	local owner = Players:GetPlayerByUserId(model:GetAttribute("OwnerUserId") or 0)
+	return owner ~= nil and owner:GetAttribute("RaceId") == raceId
+end
+
+local function shade(model: Model)
+	local value = if workspace:GetAttribute("Mode") == "Tracks" and not inMyRace(model)
+		then 1 - GHOST_OPACITY
+		else 0
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.LocalTransparencyModifier = value
+		end
+	end
+end
+
 local function ghostRemote(model: Instance)
 	if not model:IsA("Model") or model:GetAttribute("OwnerUserId") == LocalPlayer.UserId then
 		return
 	end
-	local function fade(d: Instance)
-		if d:IsA("BasePart") and workspace:GetAttribute("Mode") == "Tracks" then
-			d.LocalTransparencyModifier = 1 - GHOST_OPACITY
+	local m = model :: Model
+	remoteModels[m] = true
+	shade(m)
+	m.DescendantAdded:Connect(function(d)
+		if d:IsA("BasePart") then
+			d.LocalTransparencyModifier = if workspace:GetAttribute("Mode") == "Tracks"
+					and not inMyRace(m)
+				then 1 - GHOST_OPACITY
+				else 0
 		end
+	end)
+	m.AncestryChanged:Connect(function()
+		if m.Parent == nil then
+			remoteModels[m] = nil
+		end
+	end)
+end
+
+-- Someone joined or left a race: re-shade every other car
+function TracksClient.reshadeCars()
+	for model in remoteModels do
+		shade(model)
 	end
-	for _, d in model:GetDescendants() do
-		fade(d)
-	end
-	model.DescendantAdded:Connect(fade)
 end
 
 ---------------------------------------------------------------------------
@@ -645,9 +686,20 @@ end
 -- Builder maps: register a map definition (PieceCatalog.toMapDef) so it can be driven like any map
 function TracksClient.registerMap(def: StarterMaps.MapDef)
 	maps[def.id] = def
-	if map and map.id == def.id then
+	if (map and map.id == def.id) or LocalPlayer:GetAttribute("MapId") == def.id then
 		prepareMap(def.id)
 	end
+end
+
+-- A quick race's GO (server time): the run is on, timed from GO
+function TracksClient.startRace(goAt: number)
+	local current = map
+	if current == nil or not (current :: any).race or runState ~= "ready" then
+		return
+	end
+	runState = "running"
+	startClock = os.clock() - math.max(0, workspace:GetServerTimeNow() - goAt)
+	TracksHud.hideCue()
 end
 
 function TracksClient.unregisterMap(id: string)
@@ -694,6 +746,14 @@ local NOTICES = {
 	adminDone = "Done.",
 	adminFailed = "That didn't work. Try again.",
 	giftReceived = "A friend sent you 10 coins!",
+	equipLocked = "Finish the race first!",
+	partyFull = "That party is full (4 players).",
+	partyFriendsOnly = "Parties are for Roblox friends.",
+	partyInviteSent = "Invite sent!",
+	partyInviteGone = "That invite ran out.",
+	raceFromHub = "Quick races start from the hub's race pad.",
+	modeSoon = "Coming soon! This mode is being built.",
+	teleportFailed = "Couldn't get there. Try again in a moment!",
 }
 
 function TracksClient.init(all)
@@ -724,6 +784,12 @@ function TracksClient.start()
 		end,
 		onQuests = function()
 			controllers.Shop.toggle("quests")
+		end,
+		onHub = function()
+			controllers.Hub.goHub()
+		end,
+		onTop = function()
+			controllers.Hub.openBoard()
 		end,
 		onSettings = function()
 			if controllers.Settings.isOpen() then
@@ -802,6 +868,10 @@ function TracksClient.start()
 			return
 		end
 		resultToken += 1
+		if result.race then
+			TracksClient.RaceRun:Fire(result)
+			return
+		end
 		if testKind then
 			TracksClient.TestFinished:Fire(result)
 			return

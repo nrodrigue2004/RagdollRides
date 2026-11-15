@@ -56,8 +56,10 @@ local own: Own? = nil
 local remotes: { [Model]: Remote } = {}
 local random = Random.new()
 
+-- The damage rules: the player's own (a quick race: TracksRace, or TracksFullDamage on a Full damage
+-- map) or the place's mode
 local function mode(): string
-	return workspace:GetAttribute("Mode") or "TestTrack"
+	return LocalPlayer:GetAttribute("DamageMode") or workspace:GetAttribute("Mode") or "TestTrack"
 end
 
 local function rulesFor(modeName: string): DamageModel.ModeRules

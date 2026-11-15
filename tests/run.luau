@@ -22,6 +22,9 @@ local NetSchema = require("../src/shared/NetSchema")
 local PoseCodec = require("../src/shared/PoseCodec")
 local Remotes = require("../src/shared/Remotes")
 local VehicleMath = require("../src/shared/VehicleMath")
+local Round = require("../src/shared/Round")
+local RaceMath = require("../src/shared/RaceMath")
+local Boards = require("../src/shared/Boards")
 
 local passed, failed = 0, 0
 local current = ""
@@ -1528,6 +1531,132 @@ test("quests: picks, progress, streak", function()
 end)
 
 ---------------------------------------------------------------------------
+-- Milestone 6: the round state machine, quick races and map boards
+test("round: lobby waits, fills, and starts full at once", function()
+	local rules = Config.Race :: any
+	local r = Round.new(0)
+	check(Round.update(r, rules, 5, { players = 1 }) == nil and r.endsAt == nil, "1 player waits")
+	check(Round.update(r, rules, 6, { players = 2 }) == nil, "2nd player starts the fill clock")
+	near(r.endsAt :: number, 6 + rules.lobbyFill, 1e-9, "fill clock")
+	check(Round.update(r, rules, 8, { players = 1 }) == nil and r.endsAt == nil, "a leaver stops the clock")
+	Round.update(r, rules, 9, { players = 2 })
+	check(
+		Round.update(r, rules, 9 + rules.lobbyFill, { players = 2 }) == "Countdown",
+		"starts after the fill"
+	)
+	local full = Round.new(0)
+	check(Round.update(full, rules, 1, { players = rules.maxPlayers }) == "Countdown", "full starts at once")
+end)
+
+test("round: countdown, play ends 20 s after the first finish, results, requeue", function()
+	local rules = Config.Race :: any
+	local r = Round.new(0)
+	Round.update(r, rules, 0, { players = 8 })
+	check(r.phase == "Countdown", "countdown")
+	check(Round.update(r, rules, rules.countdown - 0.1, { players = 8 }) == nil, "countdown holds")
+	check(Round.update(r, rules, rules.countdown, { players = 8 }) == "Play", "play")
+	local start = rules.countdown
+	Round.noteFinish(r, start + 40, rules)
+	near(r.endsAt :: number, start + 40 + rules.afterFirstFinish, 1e-9, "first finish + 20 s")
+	Round.noteFinish(r, start + 45, rules)
+	near(r.endsAt :: number, start + 40 + rules.afterFirstFinish, 1e-9, "a second finish changes nothing")
+	check(Round.update(r, rules, start + 50, { players = 8, finished = 3 }) == nil, "still racing")
+	check(Round.update(r, rules, start + 60, { players = 8, finished = 3 }) == "Results", "ends on the clock")
+	check(Round.update(r, rules, start + 61, { players = 8, skipped = 8 }) == "Requeue", "all skipped")
+	check(Round.update(r, rules, start + 61 + rules.requeue, { players = 2 }) == "Lobby", "back to lobby")
+	check(r.round == 2, "round counter")
+	local p = Round.new(0)
+	Round.update(p, rules, 0, { players = 8 })
+	Round.update(p, rules, rules.countdown, { players = 8 })
+	check(
+		Round.update(p, rules, rules.countdown + 30, { players = 3, finished = 3 }) == "Results",
+		"all finished"
+	)
+	local cap = Round.new(0)
+	Round.update(cap, rules, 0, { players = 8 })
+	Round.update(cap, rules, rules.countdown, { players = 8 })
+	check(
+		Round.update(cap, rules, rules.countdown + rules.playMax, { players = 8 }) == "Results",
+		"180 s cap"
+	)
+	local empty = Round.new(0)
+	Round.update(empty, rules, 0, { players = 8 })
+	check(Round.update(empty, rules, 1, { players = 0 }) == "Results", "everyone left in the countdown")
+end)
+
+test("race: places, pay, grid and map turns", function()
+	local cfg = Config.Race :: any
+	local places = RaceMath.places({
+		{ userId = 30, time = 41.2 },
+		{ userId = 10, time = nil },
+		{ userId = 20, time = 39.9 },
+		{ userId = 40, time = 41.2 },
+		{ userId = 5, time = nil },
+	})
+	check(places[1].userId == 20 and places[1].place == 1, "fastest first")
+	check(places[2].userId == 30 and places[3].userId == 40, "ties by user id")
+	check(places[4].dnf and places[4].userId == 5 and places[5].userId == 10, "DNFs last")
+	check(RaceMath.coins(places[1], cfg) == 80 and RaceMath.coins(places[3], cfg) == 45, "place pay")
+	check(RaceMath.coins(places[4], cfg) == cfg.dnfCoins, "DNF pays 10")
+	check(RaceMath.coins({ userId = 1, place = 12, dnf = false }, cfg) == 10, "past 8th pays the last")
+	local seen = {}
+	for i = 1, 8 do
+		local right, forward = RaceMath.gridOffset(i, cfg.gridSpacing)
+		local key = right .. "," .. forward
+		check(seen[key] == nil, "grid slot " .. i .. " is free")
+		seen[key] = true
+		check(math.abs(right) <= 15 - 3, "grid slot " .. i .. " on a 30-stud road")
+	end
+	local _, poleForward = RaceMath.gridOffset(1, cfg.gridSpacing)
+	local _, backForward = RaceMath.gridOffset(5, cfg.gridSpacing)
+	check(poleForward > backForward, "front row ahead")
+	check(
+		RaceMath.ordinal(1) == "1st" and RaceMath.ordinal(2) == "2nd" and RaceMath.ordinal(3) == "3rd",
+		"ordinals"
+	)
+	check(RaceMath.ordinal(11) == "11th" and RaceMath.ordinal(22) == "22nd", "ordinals 11, 22")
+	check(
+		RaceMath.pickMap({ "a", "b" }, 0) == "a" and RaceMath.pickMap({ "a", "b" }, 3) == "b",
+		"maps in turn"
+	)
+	check(RaceMath.pickMap({}, 0) == nil, "no maps")
+	local order = RaceMath.liveOrder({
+		{ userId = 1, checkpoints = 2, at = 10 },
+		{ userId = 2, checkpoints = 3, at = 12 },
+		{ userId = 3, checkpoints = 2, at = 9 },
+		{ userId = 4, checkpoints = 3, at = 20, finished = 30 },
+	})
+	check(order[1] == 4 and order[2] == 2 and order[3] == 3 and order[4] == 1, "live order")
+end)
+
+test("boards: scopes, tabs and the pinned row", function()
+	check(Boards.allTimeScope("pips_hill") == "pips_hill_A", "all-time scope")
+	check(Boards.allTimeScope("abc12345", 2) == "abc12345_E2_A", "epoch scope")
+	local day = ProfileSchema.dayNumber(1767225600) -- 2026-01-01, a Thursday
+	check(Boards.weeklyScope("m", nil, day) == Boards.weeklyScope("m", nil, day + 3), "Thu to Sun same week")
+	check(Boards.weeklyScope("m", nil, day) ~= Boards.weeklyScope("m", nil, day + 4), "Monday is a new week")
+	check(#Boards.weeklyScope(string.rep("x", 12), 99, day) <= 50, "scopes fit the 50 character limit")
+	local entries = {
+		{ userId = 1, ms = 30000 },
+		{ userId = 2, ms = 31000 },
+		{ userId = 3, ms = 32000 },
+		{ userId = 4, ms = 33000 },
+	}
+	local list, mine = Boards.rows("alltime", entries, 3, 32000, {}, 2)
+	check(#list == 2 and list[1].userId == 1, "top count")
+	check(mine ~= nil and mine.rank == 3 and mine.me, "own row pinned with rank")
+	local friends, me = Boards.rows("friends", entries, 4, 33000, { [2] = true }, 10)
+	check(#friends == 2 and friends[1].userId == 2 and friends[1].rank == 1, "friends tab ranks friends")
+	check(friends[2].userId == 4 and me ~= nil and me.rank == 2, "you are in the friends tab")
+	local _, outside = Boards.rows("alltime", entries, 9, 40000, {}, 10)
+	check(outside ~= nil and outside.rank == nil and outside.ms == 40000, "own row without a rank")
+	local _, none = Boards.rows("weekly", entries, 9, nil, {}, 10)
+	check(none == nil, "no time, no pinned row")
+	check(Boards.shouldPost(nil, 30000, false) and Boards.shouldPost(31000, 30000, false), "new bests post")
+	check(not Boards.shouldPost(30000, 30000, false), "a tie does not post")
+	check(not Boards.shouldPost(nil, 30000, true), "board-banned players do not post")
+end)
+---------------------------------------------------------------------------
 -- Optional: check the built place file has the scripts in the right services
 local placePath = process.args[1]
 if placePath then
@@ -1559,6 +1688,9 @@ if placePath then
 				"Looks",
 				"Quests",
 				"ShopMath",
+				"Round",
+				"RaceMath",
+				"Boards",
 				"Movers",
 				"PieceCatalog",
 				"TracksMath",
@@ -1594,6 +1726,8 @@ if placePath then
 				"BuilderClient",
 				"BrowseClient",
 				"ShopClient",
+				"RaceClient",
+				"HubClient",
 			}
 		do
 			check(client ~= nil and client:FindFirstChild("Controllers"):FindFirstChild(name) ~= nil, name)
@@ -1607,6 +1741,8 @@ if placePath then
 		check(ui ~= nil and ui:FindFirstChild("BuilderHud") ~= nil, "Ui.BuilderHud")
 		check(ui ~= nil and ui:FindFirstChild("BrowseHud") ~= nil, "Ui.BrowseHud")
 		check(ui ~= nil and ui:FindFirstChild("ShopHud") ~= nil, "Ui.ShopHud")
+		check(ui ~= nil and ui:FindFirstChild("HubHud") ~= nil, "Ui.HubHud")
+		check(ui ~= nil and ui:FindFirstChild("RaceHud") ~= nil, "Ui.RaceHud")
 		local services = server and server:FindFirstChild("Services")
 		for _, name in
 			{
@@ -1622,6 +1758,12 @@ if placePath then
 				"ShopService",
 				"PurchaseService",
 				"QuestService",
+				"RoundManager",
+				"RaceService",
+				"PartyService",
+				"HubService",
+				"TeleportHub",
+				"BoardService",
 				"TestTrack",
 				"TracksService",
 				"VehicleService",

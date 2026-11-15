@@ -19,6 +19,7 @@
 --   passes[name] = true: a game pass (re-checked on join) or a pass from the bundle product
 --   daily.quests = { Quests.State } today's 3; weekly = { week, quests, starsClaimed }
 --   streak = { day = last day claimed 1..7, lastClaim = whole UTC day number (not yyyymmdd) }
+--   flags.lastMode = "tracks" | "race" | "" : the hub's mode card that glows next session
 
 -- Roblox finds Config beside this module; the Lune test runner (no `script`) uses the file path.
 local Config = if script then require(script.Parent.Config) else (require :: any)("./Config")
@@ -95,7 +96,13 @@ function ProfileSchema.default(): { [string]: any }
 		},
 		settings = deepCopy(Config.Settings.defaults),
 		receipts = {},
-		flags = { banPublishUntil = 0, starterOffered = false, starterBought = false, boardBanDay = 0 },
+		flags = {
+			banPublishUntil = 0,
+			starterOffered = false,
+			starterBought = false,
+			boardBanDay = 0,
+			lastMode = "",
+		},
 		tracks = {},
 		trackOrder = {},
 		ghosts = {},
@@ -352,6 +359,9 @@ function ProfileSchema.clientView(profile: { [string]: any }, now: number?): { [
 		streak = { day = profile.streak.day or 0, nextDay = nextDay, canClaim = canClaim },
 		starterOffered = profile.flags.starterOffered == true,
 		starterBought = profile.flags.starterBought == true,
+		lastMode = profile.flags.lastMode or "",
+		playSeconds = profile.stats.playSeconds or 0,
+		races = profile.stats.races or 0,
 	}
 end
 

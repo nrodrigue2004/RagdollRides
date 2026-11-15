@@ -282,6 +282,35 @@ local Remotes: { [string]: RemoteDef } = {
 		burst = 1,
 		since = "6",
 	},
+	["Party.Leave"] = { dir = "C2S", schema = {}, rate = 0.5, burst = 2, since = "6" },
+	["Party.State"] = { dir = "S2C", since = "6" }, -- { leader, members = { { userId, name } } } or {}
+	["Party.Invited"] = { dir = "S2C", since = "6" }, -- { from, name, expires }
+	-- Quick races (the round state machine): join from the hub, leave, skip the results
+	["Race.Join"] = { dir = "C2S", schema = {}, rate = 0.5, burst = 2, since = "6" },
+	["Race.Leave"] = { dir = "C2S", schema = {}, rate = 0.5, burst = 2, since = "6" },
+	["Race.Skip"] = { dir = "C2S", schema = {}, rate = 1, burst = 2, since = "6" },
+	["Round.State"] = { dir = "S2C", since = "6" }, -- { id, kind, phase, endsAt, players, map, order, goAt }
+	["Race.Result"] = { dir = "S2C", since = "6" }, -- { mapName, places, mine }
+	-- Map leaderboards
+	["Board.Get"] = {
+		dir = "C2S",
+		schema = { { t = "string", max = 40 }, { t = "string", oneOf = { "friends", "weekly", "alltime" } } },
+		rate = 1,
+		burst = 3,
+		since = "6",
+	},
+	["Board.Data"] = { dir = "S2C", since = "6" }, -- { mapId, tab, rows, mine }
+	-- A hub mode card's PLAY for a mode in its own place (teleport with the party)
+	["Hub.Mode"] = {
+		dir = "C2S",
+		schema = {
+			{ t = "string", oneOf = { "brawl", "highway" } },
+			{ t = "string", oneOf = { "casual", "ranked", "coop", "versus" } },
+		},
+		rate = 0.5,
+		burst = 1,
+		since = "6",
+	},
 	["Cheer"] = { dir = "C2S2C", schema = { { t = "integer", min = 1 } }, rate = 0.5, burst = 1, since = "7" },
 
 	-- Milestone 7

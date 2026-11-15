@@ -182,6 +182,14 @@ local function build(shell: Shell)
 	weld.Parent = part
 	part.Parent = source.Parent
 	source.LocalTransparencyModifier = 1
+	-- The shell shows the body's paint: follow the source part when the paint (or a damage look) changes
+	for _, property in { "Color", "Material" } do
+		source:GetPropertyChangedSignal(property):Connect(function()
+			if part.Parent then
+				(part :: any)[property] = (source :: any)[property]
+			end
+		end)
+	end
 	shell.mesh = result.mesh
 	shell.ids = result.ids
 	shell.part = part

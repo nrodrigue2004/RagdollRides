@@ -23,6 +23,10 @@ local orbitPitch = 0
 local lastOrbitInput = 0
 local shakeAmount, shakeTime, shakeLeft = 0, 0, 0
 local punch = Vector3.zero
+-- Smoothed follow target: the suspension bobs the chassis every frame, and following it exactly made the
+-- picture shake (nate, 2026-11-15: "choppy"). The camera follows a filtered focus and velocity instead.
+local smoothFocus: Vector3? = nil
+local smoothVelocity = Vector3.zero
 local reducedMotion = false
 local random = Random.new()
 local rayParams = RaycastParams.new()
@@ -89,6 +93,7 @@ function CameraController.setOverride(fn: ((number) -> (CFrame, number))?)
 	override = fn
 	if fn == nil then
 		position = nil -- snap back behind the car
+		smoothFocus = nil
 	end
 end
 
@@ -134,6 +139,24 @@ local function update(dt: number)
 			end
 		end
 	end
+
+	-- Filter the focus: tight sideways and along the road, looser up and down (suspension bob, bumps)
+	if smoothFocus == nil or (smoothFocus - focus).Magnitude > 60 then
+		smoothFocus = focus
+		smoothVelocity = velocity
+	end
+	local flatBlend = 1 - math.exp(-dt / cfg.focusSmoothing)
+	local upBlend = 1 - math.exp(-dt / cfg.focusSmoothingVertical)
+	local sf = smoothFocus :: Vector3
+	sf = Vector3.new(
+		sf.X + (focus.X - sf.X) * flatBlend,
+		sf.Y + (focus.Y - sf.Y) * upBlend,
+		sf.Z + (focus.Z - sf.Z) * flatBlend
+	)
+	smoothFocus = sf
+	smoothVelocity = smoothVelocity:Lerp(velocity, 1 - math.exp(-dt / cfg.velocitySmoothing))
+	focus = sf
+	velocity = smoothVelocity
 
 	local speedFraction = math.clamp(velocity.Magnitude / class.topSpeed, 0, 1)
 	local lag = lerp(cfg.lagAtRest, cfg.lagAtTop, speedFraction)

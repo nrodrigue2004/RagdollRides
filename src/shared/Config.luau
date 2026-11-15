@@ -289,7 +289,7 @@ Config.Driving = {
 	rollingResistance = 6, -- studs/s^2 when coasting (tune)
 	maxSteerAtZero = 32, -- degrees
 	maxSteerAtTop = 10,
-	steerRampTime = 0.12, -- keyboard and touch; sticks are instant
+	steerRampTime = 0.2, -- keyboard and touch; sticks are instant
 	-- Tyres: lateral force = clamp(-slip * stiffness, +-mu * load). Stiffness is per corner mass, per second. (tune)
 	lateralStiffness = 28,
 	-- Tyre forces are applied part way up from the contact patch to the centre of mass, to keep the
@@ -319,7 +319,7 @@ Config.Driving = {
 	-- Recovery
 	flipAfter = 1.5, -- seconds resting on roof or side before FLIP pulses
 	flipDuration = 0.4,
-	resetDuration = 0.5,
+	resetDuration = 0.8,
 	hopCooldown = 0.6,
 	-- Physics update. The spec asks for 240 Hz; Luau can only run once per frame (PreSimulation), so the
 	-- controller runs at frame rate and clamps the step. See notes/Decisions.md.
@@ -339,6 +339,9 @@ Config.Camera = {
 	lookAhead = 4,
 	orbitReturnDelay = 1.5,
 	orbitReturnSpeed = 3,
+	focusSmoothing = 0.025, -- s: how closely the camera follows the car sideways and along the road
+	focusSmoothingVertical = 0.14, -- s: up and down (hides suspension bob)
+	velocitySmoothing = 0.15, -- s: the speed used to lead the car
 	ragdollDistance = 14,
 	ragdollHeight = 6,
 	maxShake = 1.2,
@@ -414,7 +417,9 @@ Config.Damage = {
 	-- Damage by mode: looks, handling, explosions, health multiplier
 	modes = {
 		TestTrack = { looks = true, handling = true, explosion = true, health = 1.0 },
-		Tracks = { looks = true, handling = true, explosion = true, health = 1.0 },
+		-- Tracks: crashes show (dents, torn panels, explosions) but never change how the car drives, so one
+		-- bump never spoils the rest of a run (nate, 2026-11-15). A map's Full damage flag turns handling on.
+		Tracks = { looks = true, handling = false, explosion = true, health = 1.0 },
 		TracksRace = { looks = true, handling = false, explosion = false, health = 1.0 },
 		TracksFullDamage = { looks = true, handling = true, explosion = true, health = 1.0 },
 		Brawl = { looks = true, handling = true, explosion = true, health = 1.5 },
@@ -461,7 +466,7 @@ Config.Rider = {
 	jointTwist = { neck = 30, shoulder = 45, hip = 30 },
 	lifetime = 4.0,
 	fadeTime = 0.3,
-	respawnButtonAfter = 1.0,
+	respawnButtonAfter = 1.6, -- nate (2026-11-15): 1 s felt too quick
 	ejectVelocityFactor = 0.8,
 	ejectUpSpeed = 25,
 	flailImpulse = 18,
@@ -888,7 +893,7 @@ Config.Hub = {
 	},
 	-- Brawl and Highway cards show a silhouette until this much play time (spec: until minute 7 of
 	-- the first session); after that they show their mode (Coming soon until milestones 7 and 8).
-	modesUnlockSeconds = 420,
+	modesUnlockSeconds = 0, -- nate (2026-11-15): every mode is open from the start
 	zoneCooldown = 3, -- a stall opens again only after you leave it for this long
 	countsInterval = 30, -- each server writes its live player counts this often (MemoryStore)
 	countsExpiry = 90,

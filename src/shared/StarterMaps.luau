@@ -38,7 +38,7 @@ export type MapDef = {
 	creatorTime: number, -- seconds (Gold < x 1.1, Silver < x 1.5)
 	tut: string?, -- onboarding flag this map sets on first finish
 	assist: boolean?, -- steering assist forced to High (first 2 tracks)
-	autoRespawn: number?, -- seconds after a hazard throws the rider (Pip's Hill: 1 s)
+	autoRespawn: number?, -- seconds after a hazard throws the rider (Pip's Hill: 2 s)
 	coinValue: number, -- coins per trail coin, paid at the finish
 	reward: { coins: number, stars: number }?, -- a fixed first-finish reward (Pip's Hill: 100 coins, 1 star)
 	offset: { number },
@@ -434,7 +434,7 @@ StarterMaps.maps = {
 		creatorTime = 22,
 		tut = "pipHill",
 		assist = true,
-		autoRespawn = 1,
+		autoRespawn = 2,
 		coinValue = 0, -- the fixed 100-coin reward covers it
 		reward = { coins = 100, stars = 1 },
 		offset = { 3000, 0, 0 },

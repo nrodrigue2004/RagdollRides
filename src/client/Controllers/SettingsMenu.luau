@@ -94,8 +94,28 @@ local function applySteerAssist()
 	controllers.Vehicle.setSteerAssist(level)
 end
 
+-- Effects Low: the screen effects that cost the most on phones (bloom, sun rays, colour grade) go off on
+-- this device. Auto keeps them unless the device class is a phone with a small screen.
+local function applyEffects(level: string)
+	local Lighting = game:GetService("Lighting")
+	local camera = workspace.CurrentCamera
+	local small = camera ~= nil and math.min(camera.ViewportSize.X, camera.ViewportSize.Y) < 500
+	local on = level == "high" or level == "medium" or (level == "auto" and not small)
+	for _, name in { "Bloom", "SunRays" } do
+		local effect = Lighting:FindFirstChild(name)
+		if effect and effect:IsA("PostEffect") then
+			effect.Enabled = on
+		end
+	end
+	local grade = Lighting:FindFirstChild("Grade")
+	if grade and grade:IsA("PostEffect") then
+		grade.Enabled = level ~= "low"
+	end
+end
+
 local function apply()
 	local s = current
+	applyEffects(s.graphics or "auto")
 	if applied.controlSize ~= s.controlSize or applied.layout ~= s.layout then
 		controllers.Hud.setLayout(s.controlSize, s.layout == "lefthanded")
 	end

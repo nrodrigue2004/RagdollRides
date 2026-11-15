@@ -852,7 +852,7 @@ test("starter maps are complete and sane", function()
 		pip.order == 1 and pip.reward ~= nil and pip.reward.coins == 100 and pip.reward.stars == 1,
 		"Pip's Hill pays 100 coins and 1 star"
 	)
-	check(pip.autoRespawn == 1 and pip.assist == true, "Pip's Hill respawns in 1 s with assist")
+	check(pip.autoRespawn == 2 and pip.assist == true, "Pip's Hill respawns in 2 s with assist")
 	local trail = 0
 	for _, piece in pip.pieces do
 		if piece.kind == "Coin" then

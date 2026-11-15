@@ -35,14 +35,70 @@
     },
     "Lighting": {
       "$properties": {
-        "ClockTime": 14,
-        "Brightness": 2.5,
+        "ClockTime": 14.5,
+        "Brightness": 2.6,
         "GlobalShadows": true,
+        "Technology": "ShadowMap",
         "OutdoorAmbient": [
-          0.55,
-          0.55,
-          0.6
-        ]
+          0.5,
+          0.5,
+          0.56
+        ],
+        "Ambient": [
+          0.18,
+          0.18,
+          0.22
+        ],
+        "EnvironmentDiffuseScale": 0.6,
+        "EnvironmentSpecularScale": 0.6,
+        "ShadowSoftness": 0.25
+      },
+      "Atmosphere": {
+        "$className": "Atmosphere",
+        "$properties": {
+          "Density": 0.28,
+          "Offset": 0.2,
+          "Color": [
+            0.78,
+            0.86,
+            0.95
+          ],
+          "Decay": [
+            0.6,
+            0.72,
+            0.9
+          ],
+          "Glare": 0.3,
+          "Haze": 1.2
+        }
+      },
+      "Bloom": {
+        "$className": "BloomEffect",
+        "$properties": {
+          "Intensity": 0.35,
+          "Size": 24,
+          "Threshold": 1.4
+        }
+      },
+      "Grade": {
+        "$className": "ColorCorrectionEffect",
+        "$properties": {
+          "Saturation": 0.18,
+          "Contrast": 0.08,
+          "Brightness": 0.02,
+          "TintColor": [
+            1.0,
+            0.99,
+            0.97
+          ]
+        }
+      },
+      "SunRays": {
+        "$className": "SunRaysEffect",
+        "$properties": {
+          "Intensity": 0.04,
+          "Spread": 0.7
+        }
       }
     },
     "Players": {

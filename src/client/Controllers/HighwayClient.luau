@@ -1071,7 +1071,7 @@ function HighwayClient.start()
 	Net.listen("Highway.End", onEnd)
 	Net.listen("Highway.BoardData", onBoardData)
 
-	controllers.Ragdoll.setAutoRespawn(1.5)
+	controllers.Ragdoll.setAutoRespawn(2)
 	controllers.Vehicle.setRemountInPlace(true)
 	controllers.Vehicle.setAutopilot(autopilot)
 	controllers.Vehicle.Spawned:Connect(onSpawned)

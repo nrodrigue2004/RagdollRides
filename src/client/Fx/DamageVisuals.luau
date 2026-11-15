@@ -134,7 +134,7 @@ function DamageVisuals.attach(model: Model, debris: any, juice: any?)
 	for _, part in body:GetChildren() do
 		if part:IsA("BasePart") then
 			local weld = part:FindFirstChildOfClass("Weld")
-			self.originals[part.Name] = {
+			local original = {
 				part = part,
 				weld = weld,
 				c0 = if weld then weld.C0 else chassis.CFrame:ToObjectSpace(part.CFrame),
@@ -142,6 +142,28 @@ function DamageVisuals.attach(model: Model, debris: any, juice: any?)
 				transparency = part.Transparency,
 				material = part.Material,
 			}
+			self.originals[part.Name] = original
+			-- New paint (the garage) changes the clean look: keep it, and redraw this part's damage on it
+			local function readBase()
+				local color = part:GetAttribute("BaseColor")
+				if typeof(color) == "Color3" then
+					original.color = color
+				end
+				local material = part:GetAttribute("BaseMaterial")
+				if type(material) == "string" then
+					local ok, value = pcall(function()
+						return (Enum.Material :: any)[material]
+					end)
+					if ok and value then
+						original.material = value
+					end
+				end
+			end
+			readBase()
+			part:GetAttributeChangedSignal("BaseColor"):Connect(function()
+				readBase()
+				self:redraw(part.Name)
+			end)
 		end
 	end
 	self.wheelParts = {}
@@ -381,6 +403,26 @@ function DamageVisuals:apply(events: { DamageModel.Event }, looks: { number })
 	local front = looks[1]
 	self.smokeLight.Enabled = front == 1
 	self.smokeHeavy.Enabled = front >= 2
+end
+
+-- Draw one part again at its current look (after new paint)
+function DamageVisuals:redraw(name: string)
+	local original = self.originals[name]
+	if original == nil or self.hidden[original.part] then
+		return
+	end
+	if not self.cracked[name] then
+		original.part.Material = original.material
+	end
+	for zone, names in ZONE_PARTS do
+		if table.find(names, name) then
+			shapePart(self, name, zone, self.looks[zone] or 0)
+			return
+		end
+	end
+	if not self.cracked[name] then
+		original.part.Color = original.color
+	end
 end
 
 function DamageVisuals:setFire(on: boolean)

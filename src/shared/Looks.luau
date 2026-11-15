@@ -179,9 +179,15 @@ function Looks.vehicle(model: Model, looks: VehicleLooks?)
 			if role == "paint" or d.Name == "Spoke" then
 				d.Color = paint or basePaint
 				d.Material = paintMaterial or Enum.Material.SmoothPlastic
+				-- The clean look, for the damage looks to darken from and repairs to go back to (the
+				-- client writes Color locally while dented, so it can't read the paint back from Color)
+				d:SetAttribute("BaseColor", d.Color)
+				d:SetAttribute("BaseMaterial", d.Material.Name)
 			elseif d.Name == "Hub" then
 				d.Color = rims or baseTrim
 				d.Material = rimsMaterial or Enum.Material.SmoothPlastic
+				d:SetAttribute("BaseColor", d.Color)
+				d:SetAttribute("BaseMaterial", d.Material.Name)
 			elseif d:GetAttribute("LookPart") then
 				d:Destroy()
 			end

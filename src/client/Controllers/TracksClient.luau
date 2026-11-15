@@ -8,6 +8,8 @@
 -- * Moving pieces (spinners, hammers, pistons, tilt decks; Shared/Movers) move here from the server's
 --   clock, so everyone sees the same angle. A hitting part that reaches the car throws the rider (a
 --   piston shoves the car instead). Pip's Hill respawns by itself after 1 s.
+-- * Player maps: BrowseClient registers a shared map's definition (Map.Data) and it drives like any
+--   map; its results card adds rating and reporting, and NEXT is the next card from the browse list.
 -- * Builder maps: BuilderClient registers its draft here and TESTs it like any map. A test from the
 --   start gate is timed by the server (it proves the map can be finished and sets the creator time);
 --   a practice run from a checkpoint stays on this device. Both end in TestFinished, not the results card.
@@ -346,11 +348,47 @@ local function showResult(result: { [string]: any })
 	end
 	local nextMap = result.nextMap or StarterMaps.nextMap(current.id)
 	local nextDef = StarterMaps.byId[nextMap]
+	local nextName = if nextDef then nextDef.name else ""
+	local onNext = function()
+		goNext(nextMap)
+	end
+	local rate = nil
+	local mapName = current.name
+	if current.custom then
+		-- A player map: NEXT drives the next card from the browse list; rate and report below the card
+		local upNext = controllers.Browse.nextAfter(current.id)
+		nextName = if upNext then upNext.name else "More maps"
+		onNext = function()
+			controllers.Browse.playNext(current.id)
+		end
+		local about = controllers.Browse.info(current.id)
+		if about then
+			mapName ..= "  by " .. about.creator
+		end
+		if result.ok then
+			local mine = about ~= nil and about.owner == LocalPlayer.UserId
+			rate = {
+				current = result.myRating or (about and about.myRating),
+				canRate = not mine,
+				reported = controllers.Browse.hasReported(current.id),
+				onRate = function(stars: number)
+					controllers.Browse.rate(current.id, stars)
+				end,
+				onReport = function(reason: string)
+					controllers.Browse.report(current.id, reason)
+				end,
+			}
+			if mine then
+				-- Nothing to rate or report on your own map
+				rate = nil
+			end
+		end
+	end
 	local view = controllers.Profile.get()
 	TracksHud.showResults({
 		ok = result.ok == true,
 		title = title,
-		mapName = current.name,
+		mapName = mapName,
 		time = result.time,
 		bestText = bestText,
 		tier = result.tier or 0,
@@ -358,15 +396,14 @@ local function showResult(result: { [string]: any })
 		coins = result.coins or 0,
 		capped = result.capped == true,
 		reason = if result.ok then nil else friendlyReason(result.reason),
-		nextName = if nextDef then nextDef.name else "",
+		nextName = nextName,
 		goal = controllers.Profile.goal(),
 		walletCoins = result.walletCoins or (view and view.coins) or 0,
 		walletStars = result.walletStars or (view and view.stars) or 0,
+		rate = rate,
 	}, {
 		onRetry = restart,
-		onNext = function()
-			goNext(nextMap)
-		end,
+		onNext = onNext,
 		onStarPop = function(_, isNew)
 			if isNew then
 				controllers.Juice.fire("StarEarned")
@@ -646,29 +683,16 @@ function TracksClient.setBuilderButtons(testing: boolean)
 	TracksHud.setButtonVisible("Maps", not testing)
 end
 
-local function openPicker()
-	if TracksHud.pickerOpen() then
-		TracksHud.closePicker()
-		return
-	end
-	local entries = {}
-	for _, def in StarterMaps.maps do
-		local track = controllers.Profile.track(def.id)
-		table.insert(entries, {
-			id = def.id,
-			name = def.name,
-			best = if track then track.best / 1000 else nil,
-			stars = if track then track.stars or 0 else 0,
-			current = map ~= nil and map.id == def.id,
-		})
-	end
-	TracksHud.openPicker(entries, function(mapId)
-		Net.send("Map.Go", mapId)
-	end)
-end
-
 local NOTICES = {
 	saveDown = "Saving is down right now, so progress from this session won't be kept. Sorry!",
+	mapGone = "That map isn't shared any more.",
+	mapHidden = "That map is hidden while we check it.",
+	mapHiddenOwner = "One of your maps was hidden for review. Check MY MAPS.",
+	mapsFull = "This server is busy loading maps. Try again in a moment!",
+	mapBroken = "That map couldn't load. Try another one!",
+	publishBanned = "Sharing maps is paused for your account for now.",
+	adminDone = "Done.",
+	adminFailed = "That didn't work. Try again.",
 }
 
 function TracksClient.init(all)
@@ -683,7 +707,9 @@ function TracksClient.start()
 		task.wait()
 	end
 	TracksHud.build(controllers.Hud.getGui(), controllers.Hud.getResetButton(), {
-		onMaps = openPicker,
+		onMaps = function()
+			controllers.Browse.toggle()
+		end,
 		onBuild = function()
 			if controllers.Builder then
 				controllers.Builder.onBuildButton()

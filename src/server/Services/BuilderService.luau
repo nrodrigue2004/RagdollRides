@@ -225,6 +225,16 @@ local function onBuild(player: Player, slot: number)
 	EconomyService.builderFunnel(player, 1, "Opened builder")
 end
 
+-- Close the builder without moving the car (Map.Play moves it next)
+function BuilderService.exitBuild(player: Player)
+	if building[player] == nil then
+		return
+	end
+	building[player] = nil
+	player:SetAttribute("BuildSlot", nil)
+	clearTestMap(player)
+end
+
 local function onSaveDraft(player: Player, slot: number, b: buffer)
 	if building[player] ~= slot then
 		return

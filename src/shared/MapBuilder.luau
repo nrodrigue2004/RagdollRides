@@ -411,11 +411,7 @@ function MapBuilder.buildPieces(
 	end
 end
 
--- Server: build a map once and keep it (player maps are destroyed when nobody needs them)
-function MapBuilder.build(map: StarterMaps.MapDef): Model
-	if built[map.id] then
-		return built[map.id]
-	end
+local function newModel(map: StarterMaps.MapDef): Model
 	if folder == nil then
 		local f = Instance.new("Folder")
 		f.Name = "Maps"
@@ -426,9 +422,11 @@ function MapBuilder.build(map: StarterMaps.MapDef): Model
 	model.Name = map.id
 	model:SetAttribute("MapId", map.id)
 	model:SetAttribute("MapName", map.name)
-	MapBuilder.buildPieces(model, map, map.pieces, 1)
+	return model
+end
 
-	-- Decorative ground far enough below that a car falling off resets before it lands
+-- Decorative ground far enough below that a car falling off resets before it lands
+local function addGround(model: Model, map: StarterMaps.MapDef)
 	local lo, hi = StarterMaps.bounds(map)
 	local gx, gy, gz =
 		StarterMaps.toWorld(map, (lo[1] + hi[1]) / 2, lo[2] - GROUND_BELOW, (lo[3] + hi[3]) / 2)
@@ -440,9 +438,83 @@ function MapBuilder.build(map: StarterMaps.MapDef): Model
 		PALETTE.ground
 	)
 	ground.Material = Enum.Material.Grass
+end
+
+-- Server: build a map once and keep it (player maps are destroyed when nobody needs them)
+function MapBuilder.build(map: StarterMaps.MapDef): Model
+	if built[map.id] then
+		return built[map.id]
+	end
+	local model = newModel(map)
+	MapBuilder.buildPieces(model, map, map.pieces, 1)
+	addGround(model, map)
 	model.Parent = folder
 	built[map.id] = model
 	return model
+end
+
+-- Server: the same, a batch of pieces per frame (a player map loading mid-game never hitches the
+-- server). The model is parented once it is whole. Yields; a second call for the same map waits for it.
+local pending: { [string]: boolean } = {}
+function MapBuilder.buildAsync(map: StarterMaps.MapDef, batch: number): Model?
+	while pending[map.id] do
+		task.wait()
+	end
+	if built[map.id] then
+		return built[map.id]
+	end
+	pending[map.id] = true
+	local model = newModel(map)
+	local ok, err = pcall(function()
+		local pieces = map.pieces
+		local i = 1
+		while i <= #pieces do
+			local last = math.min(i + batch - 1, #pieces)
+			MapBuilder.buildPieces(model, map, table.move(pieces, i, last, 1, {}), i)
+			i = last + 1
+			if i <= #pieces then
+				task.wait()
+			end
+		end
+		addGround(model, map)
+	end)
+	pending[map.id] = nil
+	if not ok then
+		warn(string.format("[MapBuilder] %s failed to build: %s", map.id, tostring(err)))
+		model:Destroy()
+		return nil
+	end
+	model.Parent = folder
+	built[map.id] = model
+	return model
+end
+
+-- Browse card sketches: the top-down colour of a piece, or nil for pieces the sketch leaves out
+local SKETCH: { [string]: Color3 } = {
+	Road = PALETTE.road,
+	Ramp = PALETTE.ramp,
+	Block = PALETTE.block,
+	Wall = PALETTE.wall,
+	Joint = PALETTE.joint,
+	SoftWall = PALETTE.builderWall,
+	Start = PALETTE.start,
+	Checkpoint = PALETTE.checkpoint,
+	Finish = PALETTE.finish,
+	Spinner = PALETTE.spinner,
+	Hammer = PALETTE.hammer,
+	Piston = PALETTE.piston,
+	TiltPlatform = PALETTE.tilt,
+	HazardBar = PALETTE.hazard,
+	Hazard = PALETTE.hazard,
+	Bouncer = PALETTE.bouncer,
+	SpeedPad = PALETTE.speed,
+}
+function MapBuilder.sketchColour(piece: StarterMaps.Piece): Color3?
+	local base = SKETCH[piece.kind]
+	if base == nil then
+		return nil
+	end
+	return colourOf(piece, base)
 end
 
 function MapBuilder.get(mapId: string): Model?

@@ -137,11 +137,41 @@ local Remotes: { [string]: RemoteDef } = {
 		burst = 1,
 		since = "4",
 	},
+	-- Map.Browse: a tab and a page; Map.List answers with up to 9 cards (spec: Browse)
 	["Map.Browse"] = {
 		dir = "C2S",
-		schema = { { t = "string", max = 16 }, { t = "integer", min = 1, max = 50 } },
+		schema = {
+			{ t = "string", oneOf = { "featured", "popular", "newest", "friends", "mine", "review" } },
+			{ t = "integer", min = 1, max = 50 },
+		},
 		rate = 1,
+		burst = 3,
+		since = "4",
+	},
+	["Map.List"] = { dir = "S2C", since = "4" }, -- { tab, page, pages, cards }
+	-- Map.Play: load a published map and drive it; Map.Data sends its pieces first
+	["Map.Play"] = {
+		dir = "C2S",
+		schema = { { t = "string", max = 40 } },
+		rate = 0.5,
 		burst = 2,
+		since = "4",
+	},
+	["Map.Data"] = { dir = "S2C", since = "4" }, -- { mapId, data, offset, creatorMs, name, ... }
+	["Map.Royalty"] = { dir = "S2C", since = "4" }, -- coins your maps earned
+	["Map.Reported"] = { dir = "S2C", since = "4" }, -- mapId, ok, reason key
+	-- Admin.Map: moderation from the browse card (DataService.isAdmin only)
+	["Admin.Map"] = {
+		dir = "C2S",
+		schema = {
+			{ t = "string", max = 40 },
+			{
+				t = "string",
+				oneOf = { "feature", "unfeature", "hide", "unhide", "ban7", "ban30", "banForever", "unban" },
+			},
+		},
+		rate = 1,
+		burst = 3,
 		since = "4",
 	},
 

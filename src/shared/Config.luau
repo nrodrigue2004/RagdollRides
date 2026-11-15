@@ -8,7 +8,7 @@
 
 local Config = {}
 
-Config.Version = "0.4.0-m3"
+Config.Version = "0.5.0-m4"
 
 ---------------------------------------------------------------------------
 -- World
@@ -562,6 +562,7 @@ Config.Tracks = {
 	ghostRate = 5, -- ghost samples per second
 	maxGhostSeconds = 180,
 	maxStoredGhosts = 20, -- most recent maps keep a ghost; starter maps always do
+	maxStoredTracks = 300, -- player maps keep best times, stars and ratings for the newest 300
 	autoNextTime = 5,
 	resultsSkippableAfter = 2,
 	idleHonkTime = 6, -- Pip's Hill: idle this long and Pip honks and points
@@ -598,6 +599,36 @@ Config.Builder = {
 	maxPlots = 16,
 	buildBatch = 40, -- server builds of player maps: pieces per frame (spec: Map loading)
 	testTimeout = 4, -- seconds a TEST waits for the server to put the car on the plot
+}
+
+-- Player maps: playing, browsing, ratings, royalties and moderation (spec: Browse, Moderation,
+-- Creator royalties). Every number is (tune) except the moderation rules, which are spec numbers.
+Config.Maps = {
+	coinsPerPlay = 5, -- royalties to the creator per play by someone else (once per player per map per day)
+	royaltyDailyCap = 200,
+	ratingsBeforeShown = 10, -- under this a card says "New" and Popular counts the map as 3.5 stars
+	newMapRating = 3.5,
+	popularDays = 7,
+	flushInterval = 60, -- plays, finishers and ratings are batched into the map record this often
+	popularInterval = 600, -- and the Popular index is rewritten this often for maps that changed
+	pageSize = 9, -- browse cards per page (3 x 3)
+	listLength = 90, -- ids read from an index per tab (10 pages)
+	friendsChecked = 30, -- the Friends tab reads this many friends' map lists
+	listCache = 60, -- seconds a tab's id list is reused
+	-- Loaded player maps on this server: one slot each, built in batches, unloaded when unused
+	slotOrigin = { 0, 0, -6000 },
+	slotSpacing = 1300,
+	maxLoaded = 24,
+	unloadAfter = 60, -- seconds with nobody on it
+	-- Moderation (spec numbers)
+	reportsToHide = 5,
+	reportShare = 0.1, -- or more than 10% of finishers...
+	reportShareFrom = 20, -- ...once this many have finished it
+	reportMinAccountDays = 3,
+	strikeWindowDays = 30,
+	strikesForBan = 3,
+	banDays = { 7, 30 }, -- then permanent
+	forever = 2 ^ 31 - 1,
 }
 
 -- The next-goal bar shows the cheapest goal not yet afforded (the shop arrives in milestone 5).

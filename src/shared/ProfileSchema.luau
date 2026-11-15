@@ -6,6 +6,9 @@
 --   tracks = { [mapId] = { best = ms, stars = 0..3, splits = { ms per checkpoint } } }  per-map results
 --   ghosts = { [mapId] = base64 ghost }, ghostOrder = { mapIds, newest last }          best-run ghosts
 --   flags.boardBanDay = yyyymmdd: 3 rejected runs in 10 minutes = no leaderboard posts that day
+--   trackOrder = { mapIds } player maps with a tracks entry, newest last (kept to the newest 300)
+--   ratings = { [mapId] = 1..5 } (spec field), trimmed with trackOrder
+--   daily.mapStarts = { [mapId] = n } runs started today (a play counts once per player per map per day)
 --   maps.drafts = { [tostring(slot)] = base64 map buffer } (string keys: DataStores need one key type)
 --   maps.links = { [tostring(slot)] = mapId } a draft's published map (a republish keeps plays/ratings)
 --   maps.lastPublish = unix time of the last publish (the 10 minute cooldown survives a rejoin)
@@ -47,6 +50,7 @@ function ProfileSchema.default(): { [string]: any }
 			day = 0,
 			coinsByMode = { tracks = 0, brawl = 0, highway = 0 },
 			mapFinishes = {},
+			mapStarts = {},
 			royalties = 0,
 			giftSent = false,
 			quests = {},
@@ -86,6 +90,7 @@ function ProfileSchema.default(): { [string]: any }
 		receipts = {},
 		flags = { banPublishUntil = 0, starterOffered = false, boardBanDay = 0 },
 		tracks = {},
+		trackOrder = {},
 		ghosts = {},
 		ghostOrder = {},
 	}
@@ -195,6 +200,25 @@ end
 ---------------------------------------------------------------------------
 -- Ghost storage: starter maps always keep theirs; other maps keep the most recent N
 ---------------------------------------------------------------------------
+
+-- A finish on a map: player maps keep their tracks entry (best time, stars) and rating for the newest
+-- Config.Tracks.maxStoredTracks maps, so a profile never grows without end. Starter maps always keep theirs.
+function ProfileSchema.noteTrack(profile: { [string]: any }, mapId: string, keepAlways: { [string]: boolean })
+	if keepAlways[mapId] then
+		return
+	end
+	local order = profile.trackOrder
+	local index = table.find(order, mapId)
+	if index then
+		table.remove(order, index)
+	end
+	table.insert(order, mapId)
+	while #order > Config.Tracks.maxStoredTracks do
+		local old = table.remove(order, 1) :: string
+		profile.tracks[old] = nil
+		profile.ratings[old] = nil
+	end
+end
 
 function ProfileSchema.storeGhost(
 	profile: { [string]: any },

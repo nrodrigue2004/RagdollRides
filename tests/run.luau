@@ -10,6 +10,7 @@ local GhostCodec = require("../src/shared/GhostCodec")
 local MapCodec = require("../src/shared/MapCodec")
 local MapNames = require("../src/shared/MapNames")
 local MapRules = require("../src/shared/MapRules")
+local MapStats = require("../src/shared/MapStats")
 local PieceCatalog = require("../src/shared/PieceCatalog")
 local ProfileSchema = require("../src/shared/ProfileSchema")
 local StarterMaps = require("../src/shared/StarterMaps")
@@ -1227,6 +1228,103 @@ test("builder: a builder map drives like a starter map", function()
 	check(wx == 0 and wz == 6000, "plot offset")
 end)
 
+test("maps: ratings, Popular score and paging", function()
+	check(MapStats.shownRating(40, 9) == nil, "under 10 ratings shows NEW")
+	check(MapStats.shownRating(43, 10) == 4.3, "average to one decimal")
+	check(MapStats.scoreRating(5, 1) == 3.5, "a new map counts as 3.5 stars")
+	check(MapStats.scoreRating(50, 10) == 5, "enough ratings use the real average")
+	local days = { ["100"] = 10, ["97"] = 5, ["93"] = 99, ["94"] = 1 }
+	check(MapStats.recentPlays(days, 100) == 16, "only the last 7 days count")
+	check(MapStats.popularScore(days, 100, 50, 10) == 1600, "16 plays at 5 stars")
+	check(MapStats.popularScore(days, 100, 0, 0) == math.floor(16 * 0.49 * 100 + 0.5), "16 plays, new map")
+	check(
+		MapStats.popularScore({ ["100"] = 10 }, 100, 10, 10)
+			< MapStats.popularScore({ ["100"] = 10 }, 100, 0, 0),
+		"a 1 star map ranks under a new one"
+	)
+	MapStats.trimDays(days, 100)
+	check(days["93"] == nil and days["94"] == 1 and days["100"] == 10, "old days dropped")
+	local sum, count = MapStats.ratingDelta(nil, 4)
+	check(sum == 4 and count == 1, "first rating")
+	sum, count = MapStats.ratingDelta(4, 2)
+	check(sum == -2 and count == 0, "a changed rating moves the sum only")
+	local first, last = MapStats.pageRange(20, 3, 9)
+	check(first == 19 and last == 20, "last page")
+	local o1, o2 = MapStats.slotOffset(1), MapStats.slotOffset(2)
+	check(o1[3] == Config.Maps.slotOrigin[3] and o2[3] == o1[3] - Config.Maps.slotSpacing, "map slots")
+	-- Slots never touch the starter maps or the build plots
+	local lastSlot = MapStats.slotOffset(Config.Maps.maxLoaded)
+	check(lastSlot[3] < 0 and o1[3] + 1024 / 2 < 0, "slots are on the far side of the starter maps")
+end)
+
+test("maps: reports, strikes and royalties", function()
+	check(not MapStats.shouldHide(4, 10), "4 reports is not enough")
+	check(MapStats.shouldHide(5, 10), "5 reports hides")
+	check(not MapStats.shouldHide(3, 19), "share rule waits for 20 finishers")
+	check(MapStats.shouldHide(3, 20), "3 of 20 finishers is over 10%")
+	check(not MapStats.shouldHide(2, 20), "2 of 20 is not over 10%")
+	check(not MapStats.reportCounts(2, true, false), "new accounts don't count")
+	check(not MapStats.reportCounts(30, false, false), "you must finish it")
+	check(not MapStats.reportCounts(30, true, true), "never your own map")
+	check(MapStats.reportCounts(3, true, false), "a counted report")
+	local day = 86400
+	local now = 1000 * day
+	local strikes, level, ban = MapStats.addStrike({}, 0, now)
+	check(#strikes == 1 and level == 0 and ban == 0, "one strike")
+	strikes, level, ban = MapStats.addStrike({ now - 40 * day, now - 10 * day }, 0, now)
+	check(#strikes == 2 and ban == 0, "a strike over 30 days old drops off")
+	strikes, level, ban = MapStats.addStrike({ now - 2 * day, now - day }, 0, now)
+	check(#strikes == 0 and level == 1 and ban == now + 7 * day, "3 strikes: 7 day ban")
+	_, level, ban = MapStats.addStrike({ now - 2 * day, now - day }, 1, now)
+	check(level == 2 and ban == now + 30 * day, "then 30 days")
+	_, level, ban = MapStats.addStrike({ now - 2 * day, now - day }, 2, now)
+	check(level == 3 and ban == Config.Maps.forever, "then for good")
+	_, level, ban = MapStats.addStrike({ now - 2 * day, now - day }, 3, now)
+	check(level == 3 and ban == Config.Maps.forever, "and it stays for good")
+	check(MapStats.royaltyRoom(5, 0) == 5, "royalty paid")
+	check(MapStats.royaltyRoom(5, 198) == 2, "up to the daily cap")
+	check(MapStats.royaltyRoom(5, 200) == 0, "capped")
+end)
+
+test("profile: player map entries are bounded", function()
+	local profile = ProfileSchema.default()
+	local keep = { pip = true }
+	profile.tracks.pip = { best = 1, stars = 1, splits = {} }
+	ProfileSchema.noteTrack(profile, "pip", keep)
+	check(#profile.trackOrder == 0, "starter maps are never trimmed")
+	local cap = Config.Tracks.maxStoredTracks
+	for i = 1, cap + 5 do
+		local id = "map" .. i
+		profile.tracks[id] = { best = i, stars = 1, splits = {} }
+		profile.ratings[id] = 3
+		ProfileSchema.noteTrack(profile, id, keep)
+	end
+	check(#profile.trackOrder == cap, "kept to the cap")
+	check(profile.tracks.map1 == nil and profile.ratings.map1 == nil, "oldest dropped with its rating")
+	check(profile.tracks["map" .. (cap + 5)] ~= nil, "newest kept")
+	check(profile.tracks.pip ~= nil, "starter entry kept")
+	ProfileSchema.noteTrack(profile, "map10", keep)
+	check(profile.trackOrder[#profile.trackOrder] == "map10", "a replay moves to the newest")
+	check(profile.daily.mapStarts ~= nil and profile.daily.royalties == 0, "daily map counters")
+end)
+
+test("remotes: milestone 4", function()
+	for _, name in { "Map.Play", "Map.Data", "Map.List", "Map.Browse", "Map.Rate", "Map.Report", "Admin.Map" } do
+		check(Remotes[name] ~= nil, name)
+	end
+	local browse = Remotes["Map.Browse"].schema :: any
+	check(NetSchema.validate(browse, { "popular", 2 }, 2), "a browse request")
+	check(not NetSchema.validate(browse, { "everything", 1 }, 2), "unknown tabs refused")
+	check(
+		not NetSchema.validate(Remotes["Map.Rate"].schema :: any, { "abc12345", 6 }, 2),
+		"ratings are 1 to 5"
+	)
+	check(
+		not NetSchema.validate(Remotes["Map.Report"].schema :: any, { "abc12345", "Mean" }, 2),
+		"preset reasons only"
+	)
+end)
+
 ---------------------------------------------------------------------------
 -- Optional: check the built place file has the scripts in the right services
 local placePath = process.args[1]
@@ -1254,6 +1352,7 @@ if placePath then
 				"MapCodec",
 				"MapNames",
 				"MapRules",
+				"MapStats",
 				"Movers",
 				"PieceCatalog",
 				"TracksMath",
@@ -1287,6 +1386,7 @@ if placePath then
 				"SettingsMenu",
 				"TracksClient",
 				"BuilderClient",
+				"BrowseClient",
 			}
 		do
 			check(client ~= nil and client:FindFirstChild("Controllers"):FindFirstChild(name) ~= nil, name)
@@ -1298,6 +1398,7 @@ if placePath then
 		local ui = client and client:FindFirstChild("Ui")
 		check(ui ~= nil and ui:FindFirstChild("TracksHud") ~= nil, "Ui.TracksHud")
 		check(ui ~= nil and ui:FindFirstChild("BuilderHud") ~= nil, "Ui.BuilderHud")
+		check(ui ~= nil and ui:FindFirstChild("BrowseHud") ~= nil, "Ui.BrowseHud")
 		local services = server and server:FindFirstChild("Services")
 		for _, name in
 			{
@@ -1306,6 +1407,10 @@ if placePath then
 				"EconomyService",
 				"BuilderService",
 				"MapService",
+				"MapStore",
+				"MapPlayService",
+				"ModerationService",
+				"BrowseService",
 				"TestTrack",
 				"TracksService",
 				"VehicleService",

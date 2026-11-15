@@ -1,18 +1,19 @@
 -- MapService: publishing player maps (spec: Map builder > Publish rules, Data model > Map record).
--- Milestone 4 adds browse, play, rate, report and moderation here.
 -- The map's name word ids, tags and full damage flag travel in its MapCodec header.
 -- Publish gates, checked in this order (each failure answers with a preset reason key, never text):
 --   the map is valid again on the server (MapRules), its name word ids and tags exist, its pieces are
---   exactly the ones the creator finished in TEST this session, no publish ban, 1 finished Tracks run,
+--   exactly the ones the creator finished in TEST this session, no publish ban (profile flag and the
+--   Moderation_v1 record, so a ban from another server counts at once), 1 finished Tracks run,
 --   15 minutes of play, under the live-map limit (5, VIP 15), and the 10 minute cooldown. A publish
 --   blocked only by the cooldown is queued and goes out when it ends (spec: Publish when ready).
--- Store: Maps_v1, key M_<mapId> = the map record (below); N_<adjective>_<noun>_<place> counts how often
--- a name was taken (the auto number). MapIndex_v1 scope Newest: mapId -> publish time (browse, M4).
+-- Stores (Services/MapStore): M_<mapId> the map record (below), N_<a>_<n>_<p> name counters (the auto
+-- number), C_<userId> the creator's map ids (the Friends tab), MapIndex_v1 Newest (publish time).
+-- Plays, ratings and royalties are MapPlayService's; reports, hides and bans are ModerationService's.
 -- Republishing a draft that is already live updates the same map: plays and ratings stay, and the
--- leaderboard epoch moves on if the creator time changed by over 10%.
--- Studio without API access: records live in memory for the session (same rules).
+-- leaderboard epoch moves on if the creator time changed by over 10%. A map hidden by reports can be
+-- edited and resubmitted once (spec: Moderation); after that only an admin can unhide it.
 
-local DataStoreService = game:GetService("DataStoreService")
+local AnalyticsService = game:GetService("AnalyticsService")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -29,10 +30,12 @@ local Services = script.Parent
 local BuilderService = require(Services.BuilderService)
 local DataService = require(Services.DataService)
 local EconomyService = require(Services.EconomyService)
+local MapStore = require(Services.MapStore)
 
 local MapService = {}
 
 MapService.RECORD_VERSION = 1
+MapService.FOREVER = 2 ^ 31 - 1 -- a permanent ban's end time
 
 export type MapRecord = {
 	v: number,
@@ -44,58 +47,63 @@ export type MapRecord = {
 	creatorMs: number,
 	created: number,
 	updated: number,
-	plays: number,
+	plays: number, -- plays by other players, all time (one per player per map per day)
+	playsByDay: { [string]: number }, -- the last 7 days (the Popular score)
+	finishers: number, -- players who finished it at least once (report thresholds)
 	ratingSum: number,
 	ratingCount: number,
 	hidden: boolean,
+	hiddenAt: number?,
+	resubmits: number,
+	featured: boolean,
 	boardEpoch: number,
 }
 
-local mapStore: DataStore? = nil
-local newestIndex: OrderedDataStore? = nil
-local memoryRecords: { [string]: any } = {}
-local memoryCounters: { [string]: number } = {}
 local publishing: { [Player]: boolean } = {}
 local queued: { [Player]: { slot: number, map: buffer } } = {}
 
-local function useMemory(): boolean
-	return DataService.isMemoryMode() or mapStore == nil
+function MapService.validId(mapId: any): boolean
+	return type(mapId) == "string" and #mapId >= 8 and #mapId <= 40 and mapId:match("^%w+$") ~= nil
 end
 
-local function update(key: string, fn: (any) -> any): (boolean, any)
-	if useMemory() then
-		local value = fn(memoryRecords[key])
-		if value ~= nil then
-			memoryRecords[key] = value
+function MapService.getRecord(mapId: string, fresh: boolean?): MapRecord?
+	if not MapService.validId(mapId) then
+		return nil
+	end
+	local ok, value = MapStore.get(MapStore.MAPS, "M_" .. mapId, fresh)
+	if ok and type(value) == "table" then
+		return value
+	end
+	return nil
+end
+
+-- Change an existing record: fn(old) returns the new record, or nil to leave it
+function MapService.updateRecord(mapId: string, fn: (MapRecord) -> MapRecord?): (boolean, MapRecord?)
+	return MapStore.update(MapStore.MAPS, "M_" .. mapId, function(old)
+		if type(old) ~= "table" then
+			return nil
 		end
-		return true, value
-	end
-	return pcall(function()
-		return (mapStore :: DataStore):UpdateAsync(key, fn)
+		return fn(old)
 	end)
 end
 
-function MapService.getRecord(mapId: string): MapRecord?
-	if useMemory() then
-		return memoryRecords["M_" .. mapId]
+function MapService.displayName(record: MapRecord): string
+	return MapNames.format(record.name[1], record.name[2], record.name[3], record.name[4])
+end
+
+-- A creator's publish ban end (unix time; 0 = none), from Moderation_v1 (shared by every server)
+function MapService.banUntil(userId: number): number
+	local ok, value = MapStore.get(MapStore.MODERATION, "U_" .. tostring(userId), true)
+	if ok and type(value) == "table" then
+		return tonumber(value.banUntil) or 0
 	end
-	local ok, value = pcall(function()
-		return (mapStore :: DataStore):GetAsync("M_" .. mapId)
-	end)
-	return if ok then value else nil
+	return 0
 end
 
 -- The auto number for a name: 1 for the first map with these three words, then 2, 3...
 local function takeName(a: number, n: number, p: number): number?
-	local key = string.format("N_%d_%d_%d", a, n, p)
-	if useMemory() then
-		memoryCounters[key] = (memoryCounters[key] or 0) + 1
-		return memoryCounters[key]
-	end
-	local ok, value = pcall(function()
-		return (mapStore :: DataStore):UpdateAsync(key, function(old)
-			return (tonumber(old) or 0) + 1
-		end)
+	local ok, value = MapStore.update(MapStore.MAPS, string.format("N_%d_%d_%d", a, n, p), function(old)
+		return (tonumber(old) or 0) + 1
 	end)
 	return if ok then tonumber(value) else nil
 end
@@ -108,7 +116,7 @@ local function answer(player: Player, ok: boolean, reason: string?, extra: { [st
 	Net.fire("Map.Published", player, result)
 end
 
--- Every gate but the cooldown. Returns the decoded map and its name ids, or nil and a reason key.
+-- Every gate but the cooldown. Returns the decoded map and its name ids, or nil, a reason key and a wait.
 local function checkGates(
 	player: Player,
 	profile: { [string]: any },
@@ -136,8 +144,10 @@ local function checkGates(
 		return nil, nil, "notTested", nil
 	end
 	local now = os.time()
-	if (profile.flags.banPublishUntil or 0) > now then
-		return nil, nil, "banned", profile.flags.banPublishUntil - now
+	local banned = math.max(profile.flags.banPublishUntil or 0, MapService.banUntil(player.UserId))
+	if banned > now then
+		profile.flags.banPublishUntil = banned
+		return nil, nil, "banned", if banned >= MapService.FOREVER then nil else banned - now
 	end
 	local cfg = Config.Builder
 	if profile.stats.finishes < cfg.minFinishes then
@@ -198,25 +208,37 @@ local function publish(player: Player, slot: number, b: buffer)
 	local tested = BuilderService.getTested(player) :: BuilderService.Tested
 	local mapId = profile.maps.links[slotKey]
 	local isNew = mapId == nil
+	local existing: MapRecord? = nil
 	if mapId then
 		-- A republish only updates a map this player owns (a stale link starts a new map)
-		local existing = MapService.getRecord(mapId)
+		existing = MapService.getRecord(mapId, true)
 		if existing == nil or existing.owner ~= player.UserId then
+			existing = nil
 			mapId = nil
 			isNew = true
+		elseif existing.hidden and (existing.resubmits or 0) >= 1 then
+			publishing[player] = nil
+			answer(player, false, "reviewLocked")
+			return
 		end
 	end
 	mapId = mapId or HttpService:GenerateGUID(false):gsub("-", ""):lower()
 
-	local ok, record = update("M_" .. mapId, function(old: any)
-		local sameName = old ~= nil
-			and old.name[1] == nameIds[1]
-			and old.name[2] == nameIds[2]
-			and old.name[3] == nameIds[3]
-		local number = if sameName then old.name[4] else nil
-		if number == nil then
-			number = takeName(nameIds[1], nameIds[2], nameIds[3]) or 1
-		end
+	-- The auto number first (an UpdateAsync callback must never yield)
+	local number: number
+	if
+		existing
+		and existing.name[1] == nameIds[1]
+		and existing.name[2] == nameIds[2]
+		and existing.name[3] == nameIds[3]
+	then
+		number = existing.name[4]
+	else
+		number = takeName(nameIds[1], nameIds[2], nameIds[3]) or 1
+	end
+
+	local wasHidden = false
+	local ok, record = MapStore.update(MapStore.MAPS, "M_" .. mapId, function(old: any)
 		local epoch = if old then old.boardEpoch or 0 else 0
 		if old and old.creatorMs > 0 then
 			local change = math.abs(tested.creatorMs - old.creatorMs) / old.creatorMs
@@ -224,6 +246,7 @@ local function publish(player: Player, slot: number, b: buffer)
 				epoch += 1
 			end
 		end
+		wasHidden = old ~= nil and old.hidden == true
 		return {
 			v = MapService.RECORD_VERSION,
 			owner = player.UserId,
@@ -234,23 +257,40 @@ local function publish(player: Player, slot: number, b: buffer)
 			creatorMs = tested.creatorMs,
 			created = if old then old.created else now,
 			updated = now,
-			plays = if old then old.plays else 0,
-			ratingSum = if old then old.ratingSum else 0,
-			ratingCount = if old then old.ratingCount else 0,
+			plays = if old then old.plays or 0 else 0,
+			playsByDay = if old then old.playsByDay or {} else {},
+			finishers = if old then old.finishers or 0 else 0,
+			ratingSum = if old then old.ratingSum or 0 else 0,
+			ratingCount = if old then old.ratingCount or 0 else 0,
 			hidden = false,
+			hiddenAt = nil,
+			-- An edit of a hidden map is its one resubmit (spec: Moderation)
+			resubmits = (if old then old.resubmits or 0 else 0) + (if old and old.hidden then 1 else 0),
+			featured = if old then old.featured == true else false,
 			boardEpoch = epoch,
 		}
 	end)
 	publishing[player] = nil
 	if not ok or type(record) ~= "table" then
-		warn(string.format("[Maps] publish failed for %s: %s", player.Name, tostring(record)))
 		answer(player, false, "storeDown")
 		return
 	end
-	if isNew and not useMemory() and newestIndex then
-		pcall(function()
-			(newestIndex :: OrderedDataStore):SetAsync(mapId, now)
+	if isNew then
+		MapStore.indexSet("Newest", mapId, now)
+		MapStore.update(MapStore.MAPS, "C_" .. tostring(player.UserId), function(old)
+			local list = if type(old) == "table" then old else {}
+			if not table.find(list, mapId) then
+				table.insert(list, mapId)
+			end
+			return list
 		end)
+	elseif wasHidden then
+		-- Back for review: its reports start over and it shows in Newest again
+		MapStore.update(MapStore.MODERATION, "R_" .. mapId, function()
+			return { count = 0, users = {} }
+		end)
+		MapStore.indexSet("Newest", mapId, now)
+		MapStore.indexRemove("Hidden", mapId)
 	end
 
 	-- The profile remembers the link, the cooldown and the count
@@ -264,29 +304,18 @@ local function publish(player: Player, slot: number, b: buffer)
 	task.spawn(DataService.save, player, false)
 	EconomyService.builderFunnel(player, 6, "Publish")
 	BuilderService.sendDrafts(player)
+	pcall(function()
+		AnalyticsService:LogCustomEvent(player, if isNew then "map_publish" else "map_republish", 1)
+	end)
 	answer(player, true, nil, {
 		mapId = mapId,
-		name = MapNames.format(record.name[1], record.name[2], record.name[3], record.name[4]),
+		name = MapService.displayName(record),
 		republish = not isNew,
 		first = profile.stats.mapsPublished == 1 and isNew,
 	})
 end
 
 function MapService.init()
-	if not DataService.isMemoryMode() then
-		local ok, store = pcall(function()
-			return DataStoreService:GetDataStore("Maps_v1")
-		end)
-		if ok then
-			mapStore = store
-		end
-		local okIndex, index = pcall(function()
-			return DataStoreService:GetOrderedDataStore("MapIndex_v1", "Newest")
-		end)
-		if okIndex then
-			newestIndex = index
-		end
-	end
 	Net.on("Map.Publish", publish)
 	Players.PlayerRemoving:Connect(function(player)
 		queued[player] = nil

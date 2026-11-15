@@ -1,7 +1,9 @@
 -- TracksService: the Tracks free-run loop on the server (spec: Tracks, Anti-exploit, Onboarding).
 -- * Builds the starter maps and puts each player on one (a first-time player lands straight on Pip's
---   Hill, with no menu first). Map.Go moves a player to another map (the map picker; the hub is
---   milestone 6).
+--   Hill, with no menu first). Map.Go moves a player to a starter map (the browse screen's STARTER tab;
+--   the hub is milestone 6). Published player maps are loaded and entered by MapPlayService.
+-- * Signals for the map services: MapChanged (who is on which map), RunStarted (plays), Finished
+--   (finishers). A builder TEST map (def.testOwner) goes to BuilderService's customFinish instead of pay.
 -- * Runs: Run.Start, Run.Checkpoint and Run.Finish are timed on the server's own clock. A checkpoint
 --   counts only in order and with the car near it; a finish needs every checkpoint, the car at the
 --   finish, a time no faster than the map allows and no speed flags (TracksMath.validateFinish).
@@ -21,6 +23,7 @@ local GhostCodec = require(Shared.GhostCodec)
 local Net = require(Shared.Net)
 local PoseCodec = require(Shared.PoseCodec)
 local ProfileSchema = require(Shared.ProfileSchema)
+local Signal = require(Shared.Util.Signal)
 local StarterMaps = require(Shared.StarterMaps)
 local TracksMath = require(Shared.TracksMath)
 
@@ -32,6 +35,10 @@ local TestTrack = require(Services.TestTrack)
 local VehicleService = require(Services.VehicleService)
 
 local TracksService = {}
+
+TracksService.MapChanged = Signal.new() -- (player, mapId or nil)
+TracksService.RunStarted = Signal.new() -- (player, map)
+TracksService.Finished = Signal.new() -- (player, map, firstFinish): a paid finish on any map
 
 local TEST_TRACK = "test_track" -- Studio and admins: the milestone 1 test track, for the dev panel tests
 
@@ -151,13 +158,14 @@ function TracksService.enterMap(player: Player, mapId: string)
 	runs[player] = nil
 	lastPositions[player] = nil
 	player:SetAttribute("MapId", mapId)
+	TracksService.MapChanged:Fire(player, mapId)
 	local profile = DataService.get(player)
 	local vehicleId = Config.DefaultVehicle
 	if profile and VehicleService.mayDrive(player, profile.equippedVehicle) then
 		vehicleId = profile.equippedVehicle
 	end
 	VehicleService.spawn(player, vehicleId, cf)
-	if mapId ~= TEST_TRACK and StarterMaps.byId[mapId] then
+	if mapId ~= TEST_TRACK and not (mapDefs[mapId] :: any).testOwner then
 		sendGhost(player, mapId)
 	end
 end
@@ -168,6 +176,7 @@ function TracksService.leaveMap(player: Player)
 	runs[player] = nil
 	lastPositions[player] = nil
 	player:SetAttribute("MapId", nil)
+	TracksService.MapChanged:Fire(player, nil)
 end
 
 local function chassisOf(player: Player): BasePart?
@@ -228,6 +237,7 @@ local function onStart(player: Player, mapId: string)
 	if profile and not profile.tut.pipHill and mapId == StarterMaps.FIRST_MAP then
 		EconomyService.funnel(player, 2, "First throttle")
 	end
+	TracksService.RunStarted:Fire(player, map)
 end
 
 local function onCheckpoint(player: Player, mapId: string, index: number, clientTime: number)
@@ -293,7 +303,7 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 	if math.abs(clientTime - elapsed) > 1 then
 		warn(string.format("[Tracks] %s timer off by %.2f s on %s", player.Name, clientTime - elapsed, mapId))
 	end
-	if map.custom then
+	if (map :: any).testOwner then
 		local result = if TracksService.customFinish
 			then TracksService.customFinish(player, map, time)
 			else {}
@@ -311,7 +321,7 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 		creatorSeconds = map.creatorTime,
 		previousTier = if entry then entry.stars or 0 else 0,
 		previousBestMs = if entry then entry.best else nil,
-		isStarter = true,
+		isStarter = StarterMaps.byId[mapId] ~= nil,
 		finishesToday = daily.mapFinishes[mapId] or 0,
 		trailCoins = math.clamp(trailCoins, 0, map.coins),
 		coinValue = map.coinValue,
@@ -330,6 +340,7 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 		entry.splits = run.splits
 	end
 	profile.tracks[mapId] = entry
+	ProfileSchema.noteTrack(profile, mapId, KEEP_GHOSTS)
 	daily.mapFinishes[mapId] = (daily.mapFinishes[mapId] or 0) + 1
 	profile.stats.finishes += 1
 
@@ -367,10 +378,13 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 		coins = coins,
 		capped = payout.capped,
 		firstReward = payout.firstReward,
-		nextMap = StarterMaps.nextMap(mapId),
+		nextMap = if map.custom then nil else StarterMaps.nextMap(mapId),
 		walletCoins = profile.coins,
 		walletStars = profile.stars,
+		custom = map.custom == true,
+		myRating = if map.custom then profile.ratings[mapId] else nil,
 	})
+	TracksService.Finished:Fire(player, map, firstFinish)
 end
 
 local function nearRespawn(mapId: string, position: Vector3): boolean
@@ -528,6 +542,7 @@ function TracksService.init()
 
 	Players.PlayerRemoving:Connect(function(player)
 		playerMap[player] = nil
+		TracksService.MapChanged:Fire(player, nil)
 		runs[player] = nil
 		lastPositions[player] = nil
 		speedFlags[player] = nil

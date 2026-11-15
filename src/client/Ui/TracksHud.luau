@@ -5,7 +5,8 @@
 --   Cues: one big centre word that pulses (DRIVE, JUMP!, LEAN BACK!), and short toasts.
 --   Results card: time, best, stars (popping in), coins (counting up), the goal bar, RETRY and NEXT;
 --   skippable after 2 s, then NEXT counts down 5 s and goes by itself (no downtime).
---   Map picker: the 5 starter maps with your best time and stars (stands in for the hub until milestone 6).
+--   Player maps: under the results card, rate the map 1 to 5 stars and REPORT it (3 preset reasons
+--   and SEND). Touching either stops NEXT's countdown so nobody is rushed. MAPS opens Ui/BrowseHud.
 -- Text here is ours only; players never type anything (design pillar: no free text).
 -- PLACEHOLDER ART: plain rounded frames and text glyphs (coin dot, star) until the UI art pass.
 
@@ -40,7 +41,6 @@ local cueLabel: TextLabel
 local toastLabel: TextLabel
 local buttonsFrame: Frame
 local resultsFrame: Frame? = nil
-local pickerFrame: Frame? = nil
 
 local shownCoins = 0
 local coinTween: Tween? = nil
@@ -431,6 +431,15 @@ export type ResultView = {
 	goal: Goal?,
 	walletCoins: number,
 	walletStars: number,
+	rate: RateView?, -- player maps only, after a counted finish
+}
+
+export type RateView = {
+	current: number?, -- the stars this player gave before
+	canRate: boolean, -- not on your own map
+	reported: boolean,
+	onRate: (number) -> (),
+	onReport: (string) -> (),
 }
 
 export type ResultActions = {
@@ -608,6 +617,7 @@ function TracksHud.showResults(view: ResultView, actions: ResultActions)
 	end
 
 	local done = false
+	local held = false -- the player is rating or reporting: no auto NEXT
 	local opened = os.clock()
 	local function finish(choice: () -> ())
 		if done or os.clock() - opened < cfg.resultsSkippableAfter then
@@ -620,6 +630,11 @@ function TracksHud.showResults(view: ResultView, actions: ResultActions)
 	retry.Activated:Connect(function()
 		finish(actions.onRetry)
 	end)
+	if view.rate then
+		TracksHud.ratePanel(card, view.rate, function()
+			held = true
+		end)
+	end
 	nextButton.Activated:Connect(function()
 		finish(actions.onNext)
 	end)
@@ -631,6 +646,10 @@ function TracksHud.showResults(view: ResultView, actions: ResultActions)
 		end
 		local left = cfg.autoNextTime
 		while left > 0 and not done and card.Parent do
+			if held then
+				nextButton.Text = "NEXT ▶"
+				return
+			end
 			nextButton.Text = string.format("NEXT ▶ %d", math.ceil(left))
 			task.wait(0.1)
 			left -= 0.1
@@ -641,100 +660,167 @@ function TracksHud.showResults(view: ResultView, actions: ResultActions)
 	end)
 end
 
----------------------------------------------------------------------------
--- Map picker
----------------------------------------------------------------------------
+-- Under the results card on a player map: 5 stars to rate it and REPORT (3 preset reasons + SEND)
+local REPORT_REASONS = {
+	{ id = "Shape", label = "Rude shape" },
+	{ id = "Impossible", label = "Can't finish" },
+	{ id = "Spam", label = "Spam copy" },
+}
 
-export type MapEntry = { id: string, name: string, best: number?, stars: number, current: boolean }
+function TracksHud.ratePanel(card: Frame, rate: RateView, hold: () -> ())
+	local panel = Instance.new("Frame")
+	panel.Name = "Rate"
+	panel.AnchorPoint = Vector2.new(0.5, 0)
+	panel.Position = UDim2.fromScale(0.5, 1.025)
+	panel.Size = UDim2.fromScale(0.95, 0.16)
+	panel.BackgroundColor3 = PANEL
+	panel.ZIndex = 20
+	corner(panel, 0.3)
+	stroke(panel, 3)
+	panel.Parent = card
 
-function TracksHud.closePicker()
-	if pickerFrame then
-		pickerFrame:Destroy()
-		pickerFrame = nil
+	local stars: { TextButton } = {}
+	local chosen = rate.current or 0
+	local function paint()
+		for index, star in stars do
+			star.TextColor3 = if index <= chosen then GOLD else DIM_STAR
+		end
 	end
-end
+	if rate.canRate then
+		local label = text(panel, "Label", if rate.current then "YOUR RATING" else "RATE IT!", INK)
+		label.Position = UDim2.fromScale(0.03, 0.15)
+		label.Size = UDim2.fromScale(0.24, 0.7)
+		label.ZIndex = 21
+		for index = 1, 5 do
+			local star = Instance.new("TextButton")
+			star.Name = "Star" .. index
+			star.Text = "★"
+			star.Font = FONT
+			star.TextScaled = true
+			star.BackgroundTransparency = 1
+			star.Position = UDim2.fromScale(0.28 + (index - 1) * 0.095, 0.05)
+			star.Size = UDim2.fromScale(0.09, 0.9)
+			star.ZIndex = 21
+			local minimum = Instance.new("UISizeConstraint")
+			minimum.MinSize = Vector2.new(Config.UI.minTapTarget * 0.75, Config.UI.minTapTarget * 0.75)
+			minimum.Parent = star
+			outlined(star :: any, 2)
+			star.Parent = panel
+			star.Activated:Connect(function()
+				hold()
+				chosen = index
+				paint()
+				star.Size = UDim2.fromScale(0.12, 1.2)
+				TweenService:Create(
+					star,
+					TweenInfo.new(0.2, Enum.EasingStyle.Back),
+					{ Size = UDim2.fromScale(0.09, 0.9) }
+				):Play()
+				label.Text = "THANKS!"
+				rate.onRate(index)
+			end)
+			table.insert(stars, star)
+		end
+		paint()
+	end
 
-function TracksHud.pickerOpen(): boolean
-	return pickerFrame ~= nil
-end
+	local report = Instance.new("TextButton")
+	report.Name = "Report"
+	report.Text = if rate.reported then "REPORTED" else "⚑ REPORT"
+	report.Font = FONT
+	report.TextScaled = true
+	report.TextColor3 = INK
+	report.BackgroundColor3 = WHITE
+	report.AnchorPoint = Vector2.new(1, 0.5)
+	report.Position = UDim2.fromScale(0.97, 0.5)
+	report.Size = UDim2.fromScale(0.2, 0.7)
+	report.ZIndex = 21
+	report.Active = not rate.reported
+	corner(report, 0.3)
+	stroke(report, 2)
+	local padding = Instance.new("UIPadding")
+	padding.PaddingTop = UDim.new(0.18, 0)
+	padding.PaddingBottom = UDim.new(0.18, 0)
+	padding.Parent = report
+	report.Parent = panel
 
-function TracksHud.openPicker(entries: { MapEntry }, onPick: (string) -> ())
-	TracksHud.closePicker()
-	local card = Instance.new("Frame")
-	card.Name = "MapPicker"
-	card.AnchorPoint = Vector2.new(0.5, 0.5)
-	card.Position = UDim2.fromScale(0.5, 0.5)
-	card.SizeConstraint = Enum.SizeConstraint.RelativeYY
-	card.Size = UDim2.fromScale(1.05, 0.84)
-	card.BackgroundColor3 = PANEL
-	card.ZIndex = 30
-	corner(card, 0.06)
-	stroke(card, 4)
-	card.Parent = root
-	pickerFrame = card
-
-	local title = text(card, "Title", "PICK A MAP", INK)
-	title.Position = UDim2.fromScale(0.05, 0.03)
-	title.Size = UDim2.fromScale(0.7, 0.1)
-	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.ZIndex = 31
-	local close = squareButton(card, "Close", "✕", 0)
-	close.AnchorPoint = Vector2.new(1, 0)
-	close.Position = UDim2.fromScale(0.97, 0.025)
-	close.Size = UDim2.fromScale(0.1, 0.1)
-	close.ZIndex = 31
-	close.Activated:Connect(TracksHud.closePicker)
-
-	local listFrame = Instance.new("ScrollingFrame")
-	listFrame.BackgroundTransparency = 1
-	listFrame.Position = UDim2.fromScale(0.04, 0.16)
-	listFrame.Size = UDim2.fromScale(0.92, 0.8)
-	listFrame.CanvasSize = UDim2.new()
-	listFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	listFrame.ScrollBarThickness = 8
-	listFrame.ZIndex = 31
-	listFrame.Parent = card
-	local layout = Instance.new("UIListLayout")
-	layout.Padding = UDim.new(0, 8)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Parent = listFrame
-
-	for index, entry in entries do
-		local row = Instance.new("TextButton")
-		row.Name = entry.id
-		row.Text = ""
-		row.LayoutOrder = index
-		row.BackgroundColor3 = if entry.current then Color3.fromRGB(255, 236, 170) else WHITE
-		row.Size = UDim2.new(1, -12, 0, math.max(Config.UI.minTapTarget, 72))
-		row.ZIndex = 32
-		corner(row, 0.25)
-		stroke(row, 2)
-		row.Parent = listFrame
-		local name = text(row, "Name", entry.name, INK)
-		name.TextXAlignment = Enum.TextXAlignment.Left
-		name.Position = UDim2.fromScale(0.05, 0.15)
-		name.Size = UDim2.fromScale(0.45, 0.7)
-		name.ZIndex = 33
-		local stars =
-			text(row, "Stars", string.rep("★", entry.stars) .. string.rep("☆", 3 - entry.stars), GOLD)
-		stars.Position = UDim2.fromScale(0.5, 0.2)
-		stars.Size = UDim2.fromScale(0.22, 0.6)
-		stars.ZIndex = 33
-		outlined(stars, 1)
-		local best = text(
-			row,
-			"Best",
-			if entry.best then TracksMath.formatTime(entry.best) else "NEW",
-			Color3.fromRGB(110, 110, 125)
-		)
-		best.Position = UDim2.fromScale(0.74, 0.2)
-		best.Size = UDim2.fromScale(0.22, 0.6)
-		best.ZIndex = 33
-		row.Activated:Connect(function()
-			TracksHud.closePicker()
-			onPick(entry.id)
+	report.Activated:Connect(function()
+		if not report.Active then
+			return
+		end
+		hold()
+		-- Swap the panel for the 3 reasons and SEND
+		for _, child in panel:GetChildren() do
+			if child:IsA("GuiObject") then
+				child.Visible = false
+			end
+		end
+		local picked: string? = nil
+		local choices: { [string]: TextButton } = {}
+		local send: TextButton
+		for index, reason in REPORT_REASONS do
+			local b = Instance.new("TextButton")
+			b.Name = reason.id
+			b.Text = reason.label
+			b.Font = FONT
+			b.TextScaled = true
+			b.TextColor3 = INK
+			b.BackgroundColor3 = WHITE
+			b.Position = UDim2.fromScale(0.02 + (index - 1) * 0.245, 0.15)
+			b.Size = UDim2.fromScale(0.23, 0.7)
+			b.ZIndex = 21
+			corner(b, 0.3)
+			stroke(b, 2)
+			local pad = Instance.new("UIPadding")
+			pad.PaddingTop = UDim.new(0.2, 0)
+			pad.PaddingBottom = UDim.new(0.2, 0)
+			pad.Parent = b
+			b.Parent = panel
+			choices[reason.id] = b
+			b.Activated:Connect(function()
+				picked = reason.id
+				for id, other in choices do
+					other.BackgroundColor3 = if id == picked then GOLD else WHITE
+				end
+				send.BackgroundTransparency = 0
+				send.TextTransparency = 0
+			end)
+		end
+		send = Instance.new("TextButton")
+		send.Name = "Send"
+		send.Text = "SEND"
+		send.Font = FONT
+		send.TextScaled = true
+		send.TextColor3 = INK
+		send.BackgroundColor3 = RED
+		send.BackgroundTransparency = 0.5
+		send.TextTransparency = 0.5
+		send.Position = UDim2.fromScale(0.76, 0.15)
+		send.Size = UDim2.fromScale(0.22, 0.7)
+		send.ZIndex = 21
+		corner(send, 0.3)
+		stroke(send, 2)
+		local pad = Instance.new("UIPadding")
+		pad.PaddingTop = UDim.new(0.2, 0)
+		pad.PaddingBottom = UDim.new(0.2, 0)
+		pad.Parent = send
+		send.Parent = panel
+		send.Activated:Connect(function()
+			if picked == nil then
+				return
+			end
+			rate.onReport(picked)
+			for _, child in panel:GetChildren() do
+				if child:IsA("GuiObject") then
+					child:Destroy()
+				end
+			end
+			local thanks = text(panel, "Thanks", "Thanks for keeping maps fun!", INK)
+			thanks.Position = UDim2.fromScale(0.05, 0.15)
+			thanks.Size = UDim2.fromScale(0.9, 0.7)
+			thanks.ZIndex = 21
 		end)
-	end
+	end)
 end
 
 return TracksHud

@@ -7,7 +7,7 @@ Milestones in spec order (numbers as in the spec). Each one is done when its spe
 2. **1b Crashes and damage**: code done 2026-11-15. Done when: spec "Driving and damage" checks pass (DEV Crash 60, Zones, Race looks), 5 phone testers rate it heavy and responsive at 4 of 5 or higher, and the keep-or-cut call on mesh dents is recorded in Decisions.md.
 3. **2 Core loop**: code done 2026-11-15. Checkpoints, finish, coins, ghosts, Pip's Hill, 5 maps, profile saves v1. Done when: 5 people finish a session with no server errors, and 5 first-time testers finish Pip's Hill in under 30 s.
 4. **3 Map builder**: code done 2026-11-15. Done when: spec "Tracks and builder" checks pass for the builder (build, save, reload and play a map in under 10 minutes; limits enforced by the server; publish gates; preset names only).
-5. **4 Browse and safety**: browse, ranking, ratings, reports, moderation.
+5. **4 Browse and safety**: code done 2026-11-15. Browse tabs, play published maps with pay and royalties, ratings, Popular ranking, reports, auto-hide, strikes and bans, admin tools. Done when: spec "Browse and safety" checks pass (a published map shows in Newest and plays for a second player with pay; 5 counted reports hide it; the third hide in 30 days bans publishing for 7 days; ratings move Popular).
 6. **5 Shop, passes, quests and streak**.
 7. **6 Hub and round manager, plus the party queue** (quick races fit here).
 8. **7 Bumper Brawl**. Done when: spec "Bumper Brawl" checks pass.
@@ -39,7 +39,7 @@ Milestone 2:
 - [ ] Pip's Hill beat by beat: coin trail dings rise in pitch, JUMP! shows about 1 s before the ramp lip, the coin arc is catchable, the landing zone is long enough, the roller always throws the rider, you respawn by yourself after 1 s just past it, the finish confetti fires. Under 30 s for a first-timer?
 - [ ] Results card: time, stars pop in, +100 coins and 1 star on the first Pip's Hill finish, the goal bar fills toward Starter paint. Buttons lock for 2 s, then NEXT counts down 5 s and takes you to Lean Ledge.
 - [ ] Lean Ledge: LEAN BACK! shows before the big drop; steering help is High on both first maps for a new player.
-- [ ] Every map (MAPS button): drivable start to finish, walls keep you on, no gaps at turns, ramps and gaps land. Tune each map's creator time so Gold takes a few tries (StarterMaps creatorTime).
+- [ ] Every map (MAPS → STARTER tab): drivable start to finish, walls keep you on, no gaps at turns, ramps and gaps land. Tune each map's creator time so Gold takes a few tries (StarterMaps creatorTime).
 - [ ] Tumble Gulch spinner: dodgeable, hits only when the bar reaches you; Bounce Basin bouncers and speed pads work on the maps.
 - [ ] Fall off a map: the car resets to the last checkpoint before it hits the ground below.
 - [ ] Ghost: after one finish, retry; your best run drives beside you see-through. A new best replaces it.
@@ -69,6 +69,22 @@ Milestone 3 (builder):
 - [ ] 2 players build at once: each gets their own plot, nobody sees the other's pieces.
 - [ ] Gamepad: the left stick pans, the right stick orbits, triggers zoom, the UI buttons can be selected (Roblox's gamepad selection).
 
+Milestone 4 (browse and safety; Studio API access on, so the map stores are real; without it they run in memory for the session):
+- [ ] MAPS opens the browse screen: FEATURED, POPULAR, NEWEST, FRIENDS, MY MAPS, STARTER (and REVIEW, since Studio counts as admin). Grey cards pulse while a page loads. A first-time player opens on STARTER.
+- [ ] Publish a map (milestone 3 steps), then NEWEST and MY MAPS show its card: a sketch of the map from above (does it read as the map?), the name, "by you", NEW · 0 plays, its tags.
+- [ ] Tap the card: the map builds in a moment (no server hitch with a 250-piece map) and the car is on its start. Moving pieces move, checkpoints and the finish count, falling off resets.
+- [ ] 2 players (Test → 2 players): player 2 plays player 1's map. The finish pays 30 coins (5 after 3 finishes in a day) and stars by the creator time. Player 1 gets "Players drove your maps: +5 coins!" within about a minute; a second run by player 2 the same day pays player 1 nothing more.
+- [ ] Player 2's results card has RATE IT! with 5 stars under it. Tapping stops the NEXT countdown. Change the rating and finish again: YOUR RATING shows the new one. Player 1's own map shows no rating or report row.
+- [ ] NEXT on a player map drives the next card from the list it was picked from; at the end of the list it opens browse.
+- [ ] REPORT: three reasons (Rude shape, Can't finish, Spam copy), SEND enables after picking one, "Thanks for keeping maps fun!". A second report from the same account does nothing more.
+- [ ] Admin gear on a card (Studio): FEATURE puts it on FEATURED with a gold badge; HIDE removes it from every public tab, adds it to REVIEW and shows HIDDEN / "Hidden for review" in the creator's MY MAPS; UNHIDE brings it back to NEWEST. BAN 7D then PUBLISH answers "banned"; UNBAN clears it.
+- [ ] Hide the same creator's maps 3 times (admin HIDE): the creator gets a 7-day publish ban automatically.
+- [ ] A hidden map edited and published again goes back on NEWEST once; a second hide locks it ("reviewLocked") until an admin unhides it.
+- [ ] FRIENDS shows maps by your Roblox friends (needs a live server with friends who published; Studio test accounts have no friends).
+- [ ] POPULAR fills within 10 minutes of plays (the index is rewritten every 10 minutes).
+- [ ] Leave a player map and wait 60 s: the map's parts are gone from Workspace.Maps on the server.
+- [ ] Phone: the browse tabs scroll sideways, the cards and arrows are easy to tap, the rating stars are big enough.
+
 ## Placeholder art and sound
 - PLACEHOLDER ART: all 6 vehicle bodies (VehicleBuilder BODIES blockouts), the rider rig and face, test track parts.
 - PLACEHOLDER ART: dented and crushed panel looks (procedural push-in and darken; real looks go in ReplicatedStorage.Assets.PanelLooks), cracked glass (frosted, no decal), smoke, flame, glitter and explosion particles (built-in textures), explosion glow and ring (neon parts).
@@ -76,4 +92,5 @@ Milestone 3 (builder):
 - All sound ids in Config.Sounds are empty (now including Coin, Finish, Honk, StarEarned); sounds need picking from licence-checked free sets (nate's OK first). No music yet (the Music volume setting is ready).
 - PLACEHOLDER ART: builder pieces (plain parts; the spec's lower part costs assume single-mesh prefabs from the art pass), the plot grid (SurfaceGui lines), tray labels instead of piece icons, the finish line checker (SurfaceGui squares), the placement outline (blue neon box). The Wobble Bot builder helper is not built yet (art pass).
 - New empty sound ids: BuilderPlace, BuilderRemove, Publish, PistonPush.
-- Saved but not used yet: the "Fewer flashes" and "Effects" settings (the VFX pass reads them); a builder map's Full damage flag (read when published maps are played, milestone 4).
+- Saved but not used yet: the "Fewer flashes" and "Effects" settings (the VFX pass reads them); a builder map's Full damage flag (free runs already use full damage; quick races in milestone 6 read it to pick TracksFullDamage over TracksRace).
+- PLACEHOLDER ART: browse cards (plain frames, a sketch made of flat coloured frames, text badges), the rating stars and report flag (text glyphs).

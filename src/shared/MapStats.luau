@@ -3,8 +3,9 @@
 -- Pure, so tests/run.luau checks them in Lune. Every tuning number is in Config.Maps.
 --   Popular score = plays in the last 7 days x (average rating / 5)^2 x 100. Maps with under 10 ratings
 --   count as 3.5 stars, so one early 1-star or 5-star vote can't bury or crown a map.
---   Auto-hide: 5 counted reports, or over 10% of finishers once 20 players have finished it.
---   Creator strikes: a hidden map is a strike; 3 strikes inside 30 days is a publish ban of 7 days,
+--   Auto-hide (stricter than the spec, nate 2026-11-15): 15 counted reports AND over 25% of the
+--   players who finished it. An auto-hide only takes the map off the tabs until an admin looks.
+--   Creator strikes: only an admin-confirmed hide is a strike; 3 in 90 days is a publish ban of 7 days,
 --   then 30 days, then for good.
 --   Royalties: 5 coins per play by someone else, at most 200 a day per creator.
 
@@ -75,10 +76,7 @@ end
 -- Should reports hide this map? (counted reports, players who finished it)
 function MapStats.shouldHide(reports: number, finishers: number): boolean
 	local cfg = Config.Maps
-	if reports >= cfg.reportsToHide then
-		return true
-	end
-	return finishers >= cfg.reportShareFrom and reports > finishers * cfg.reportShare
+	return reports >= cfg.reportsToHide and reports > finishers * cfg.reportShare
 end
 
 -- Does this player's report count? (account age in days, finished the map, owns it)

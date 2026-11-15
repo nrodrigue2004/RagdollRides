@@ -167,7 +167,17 @@ local Remotes: { [string]: RemoteDef } = {
 			{ t = "string", max = 40 },
 			{
 				t = "string",
-				oneOf = { "feature", "unfeature", "hide", "unhide", "ban7", "ban30", "banForever", "unban" },
+				oneOf = {
+					"feature",
+					"unfeature",
+					"hide",
+					"confirm",
+					"unhide",
+					"ban7",
+					"ban30",
+					"banForever",
+					"unban",
+				},
 			},
 		},
 		rate = 1,

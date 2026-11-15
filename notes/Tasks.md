@@ -7,7 +7,7 @@ Milestones in spec order (numbers as in the spec). Each one is done when its spe
 2. **1b Crashes and damage**: code done 2026-11-15. Done when: spec "Driving and damage" checks pass (DEV Crash 60, Zones, Race looks), 5 phone testers rate it heavy and responsive at 4 of 5 or higher, and the keep-or-cut call on mesh dents is recorded in Decisions.md.
 3. **2 Core loop**: code done 2026-11-15. Checkpoints, finish, coins, ghosts, Pip's Hill, 5 maps, profile saves v1. Done when: 5 people finish a session with no server errors, and 5 first-time testers finish Pip's Hill in under 30 s.
 4. **3 Map builder**: code done 2026-11-15. Done when: spec "Tracks and builder" checks pass for the builder (build, save, reload and play a map in under 10 minutes; limits enforced by the server; publish gates; preset names only).
-5. **4 Browse and safety**: code done 2026-11-15. Browse tabs, play published maps with pay and royalties, ratings, Popular ranking, reports, auto-hide, strikes and bans, admin tools. Done when: spec "Browse and safety" checks pass (a published map shows in Newest and plays for a second player with pay; 5 counted reports hide it; the third hide in 30 days bans publishing for 7 days; ratings move Popular).
+5. **4 Browse and safety**: code done 2026-11-15. Browse tabs, play published maps with pay and royalties, ratings, Popular ranking, reports, auto-hide, strikes and bans, admin tools. Done when: spec "Browse and safety" checks pass (a published map shows in Newest and plays for a second player with pay; 15 counted reports from over 25% of its finishers hide it until an admin looks; the third admin-confirmed hide in 90 days bans publishing for 7 days; ratings move Popular).
 6. **5 Shop, passes, quests and streak**.
 7. **6 Hub and round manager, plus the party queue** (quick races fit here).
 8. **7 Bumper Brawl**. Done when: spec "Bumper Brawl" checks pass.
@@ -77,8 +77,8 @@ Milestone 4 (browse and safety; Studio API access on, so the map stores are real
 - [ ] Player 2's results card has RATE IT! with 5 stars under it. Tapping stops the NEXT countdown. Change the rating and finish again: YOUR RATING shows the new one. Player 1's own map shows no rating or report row.
 - [ ] NEXT on a player map drives the next card from the list it was picked from; at the end of the list it opens browse.
 - [ ] REPORT: three reasons (Rude shape, Can't finish, Spam copy), SEND enables after picking one, "Thanks for keeping maps fun!". A second report from the same account does nothing more.
-- [ ] Admin gear on a card (Studio): FEATURE puts it on FEATURED with a gold badge; HIDE removes it from every public tab, adds it to REVIEW and shows HIDDEN / "Hidden for review" in the creator's MY MAPS; UNHIDE brings it back to NEWEST. BAN 7D then PUBLISH answers "banned"; UNBAN clears it.
-- [ ] Hide the same creator's maps 3 times (admin HIDE): the creator gets a 7-day publish ban automatically.
+- [ ] Admin gear on a card (Studio): FEATURE puts it on FEATURED with a gold badge; HIDE removes it from every public tab, adds it to REVIEW and shows HIDDEN / "Hidden for review" in the creator's MY MAPS; on a hidden card CONFIRM HIDE and UNHIDE show, and UNHIDE brings it back to NEWEST. BAN 7D then PUBLISH answers "banned"; UNBAN clears it.
+- [ ] Hide 3 of the same creator's maps with admin HIDE (or CONFIRM HIDE): the creator gets a 7-day publish ban automatically. A map hidden only by reports gives no strike until an admin confirms it.
 - [ ] A hidden map edited and published again goes back on NEWEST once; a second hide locks it ("reviewLocked") until an admin unhides it.
 - [ ] FRIENDS shows maps by your Roblox friends (needs a live server with friends who published; Studio test accounts have no friends).
 - [ ] POPULAR fills within 10 minutes of plays (the index is rewritten every 10 minutes).

@@ -1,16 +1,19 @@
 -- ModerationService: keeping shared maps safe (spec: Moderation; map sharing is piece-based with
 -- preset names only, so reports are about shapes and fairness, never text).
+-- Hiding a map or a creator is deliberately hard (nate, 2026-11-15; stricter than the spec):
 -- * Map.Report (one of three preset reasons: Shape, Impossible, Spam) counts only from an account at
---   least 3 days old that finished the map, once per account, and never on your own map. Tallies are in
---   Moderation_v1 R_<mapId>.
--- * Auto-hide at 5 counted reports, or more than 10% of finishers once 20 have finished
---   (MapStats.shouldHide). A hidden map leaves every browse tab, is listed in the admins' Review tab
---   and shows as "Hidden for review" in its creator's My Maps. The creator can edit and resubmit it once.
--- * Every hide is a creator strike (Moderation_v1 U_<userId>): 3 strikes inside 30 days is a publish
---   ban of 7 days, then 30 days, then for good. The ban is copied into the profile on join; MapService
---   also reads it fresh on every publish, so a ban from another server counts at once.
--- * Admin.Map (DataService.isAdmin only): feature, unfeature, hide, unhide, ban7, ban30, banForever and
---   unban, from the admin row on a browse card. Featured is hand-picked: it replaces a bot check that
+--   least 30 days old that finished the map, once per account, and never on your own map. Tallies are
+--   in Moderation_v1 R_<mapId>.
+-- * Auto-hide needs 15 counted reports AND more than 25% of the map's finishers (MapStats.shouldHide).
+--   It only takes the map off the browse tabs until an admin looks: it lands in the admins' Review tab
+--   and shows as "Hidden for review" in its creator's My Maps. No strike for the creator.
+-- * An admin decides: UNHIDE (it was fine; its reports start over) or CONFIRM (the hide stands).
+--   An admin HIDE on a live map is also confirmed. Only confirmed hides are creator strikes
+--   (Moderation_v1 U_<userId>): 3 inside 90 days is a publish ban of 7 days, then 30 days, then for
+--   good. The ban is copied into the profile on join; MapService also reads it fresh on every publish.
+--   A creator can edit and resubmit a hidden map once.
+-- * Admin.Map (DataService.isAdmin only): feature, unfeature, hide, confirm, unhide, ban7, ban30,
+--   banForever and unban, from the admin row on a browse card. Featured is hand-picked: it replaces a bot check that
 --   maps can be finished (every published map was already finished by its creator in TEST).
 
 local Players = game:GetService("Players")
@@ -83,29 +86,44 @@ local function setBan(userId: number, untilTime: number)
 	return ok
 end
 
--- Hide a map: off every tab, into Review, a strike for its creator
-function ModerationService.hide(mapId: string, why: string): boolean
+-- Hide a map: off every tab and into Review. confirmed: an admin looked and the hide stands, which is
+-- a strike for its creator (once per map). An auto-hide by reports is never a strike.
+function ModerationService.hide(mapId: string, why: string, confirmed: boolean): boolean
 	local now = os.time()
 	local wasHidden = false
+	local newStrike = false
 	local ok, record = MapService.updateRecord(mapId, function(old)
 		wasHidden = old.hidden == true
-		if wasHidden then
+		newStrike = confirmed and not old.confirmed
+		if wasHidden and not newStrike then
 			return nil
 		end
 		old.hidden = true
-		old.hiddenAt = now
+		old.hiddenAt = old.hiddenAt or now
 		old.featured = false
+		if confirmed then
+			old.confirmed = true
+		end
 		return old
 	end)
-	if not ok or type(record) ~= "table" or wasHidden then
-		return ok and wasHidden
+	if not ok then
+		return false
+	end
+	if type(record) ~= "table" then
+		return wasHidden -- already hidden (and already confirmed, if asked)
+	end
+	if newStrike then
+		strike(record.owner)
+	end
+	if wasHidden then
+		print(string.format("[Moderation] map %s hide confirmed (%s)", mapId, why))
+		return true
 	end
 	for _, scope in { "Newest", "Popular", "Featured" } do
 		MapStore.indexRemove(scope, mapId)
 	end
 	MapStore.indexSet("Hidden", mapId, now)
 	MapPlayService.dropFromServer(mapId)
-	strike(record.owner)
 	local owner = Players:GetPlayerByUserId(record.owner)
 	if owner then
 		Net.fire("Notice", owner, "mapHiddenOwner")
@@ -119,6 +137,7 @@ local function unhide(mapId: string): boolean
 	local ok, record = MapService.updateRecord(mapId, function(old)
 		old.hidden = false
 		old.hiddenAt = nil
+		old.confirmed = nil
 		return old
 	end)
 	if ok and type(record) == "table" then
@@ -168,7 +187,7 @@ local function onReport(player: Player, mapId: string, reason: string)
 	end
 	local finishers = (record.finishers or 0) + MapPlayService.pendingFinishers(mapId)
 	if MapStats.shouldHide(count, finishers) then
-		ModerationService.hide(mapId, string.format("%d reports, %d finishers", count, finishers))
+		ModerationService.hide(mapId, string.format("%d reports, %d finishers", count, finishers), false)
 	end
 end
 
@@ -195,7 +214,13 @@ local ADMIN_ACTIONS: { [string]: (string, MapService.MapRecord) -> boolean } = {
 		return ok
 	end,
 	hide = function(mapId)
-		return ModerationService.hide(mapId, "admin")
+		return ModerationService.hide(mapId, "admin", true)
+	end,
+	confirm = function(mapId, record)
+		if not record.hidden then
+			return false
+		end
+		return ModerationService.hide(mapId, "admin confirmed", true)
 	end,
 	unhide = function(mapId)
 		return unhide(mapId)

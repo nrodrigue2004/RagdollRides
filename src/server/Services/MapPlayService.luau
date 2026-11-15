@@ -57,7 +57,7 @@ local popularDue: { [string]: number } = {} -- mapId -> its newest score, writte
 local creatorNames: { [number]: string } = {}
 
 local function today(): number
-	return ProfileSchema.dayKey(os.time())
+	return ProfileSchema.dayNumber(os.time()) -- whole days, so "the last 7 days" works across months
 end
 
 local function pendingFor(mapId: string): Pending

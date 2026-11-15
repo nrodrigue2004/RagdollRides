@@ -142,6 +142,11 @@ function ProfileSchema.dayKey(unixTime: number): number
 	return d.year * 10000 + d.month * 100 + d.day
 end
 
+-- Whole UTC days since 1970 (for counting days apart: streaks, weeks, the last 7 days of plays)
+function ProfileSchema.dayNumber(unixTime: number): number
+	return math.floor(unixTime / 86400)
+end
+
 -- Reset the daily counters when the UTC day changed. Returns true if it reset.
 function ProfileSchema.rollDay(profile: { [string]: any }, unixTime: number): boolean
 	local today = ProfileSchema.dayKey(unixTime)

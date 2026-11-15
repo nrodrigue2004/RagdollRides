@@ -204,6 +204,13 @@ local ADMIN_ACTIONS = {
 		end,
 	},
 	{
+		id = "confirm",
+		label = "CONFIRM HIDE",
+		show = function(a: AdminState)
+			return a.hidden
+		end,
+	},
+	{
 		id = "unhide",
 		label = "UNHIDE",
 		show = function(a: AdminState)

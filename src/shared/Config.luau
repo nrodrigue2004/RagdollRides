@@ -163,7 +163,13 @@ export type VehicleDef = {
 	displayName: string,
 	class: string,
 	hopSpeed: number, -- 0 = no JUMP button
-	unlock: { coins: number, stars: number, mastery: { vehicle: string, level: number }? },
+	unlock: {
+		coins: number,
+		stars: number,
+		mastery: { vehicle: string, level: number }?,
+		pass: string?, -- granted by a game pass (Stunt Set side-grades), never sold for coins
+	},
+	tier: number?, -- 1 = the 6 launch vehicles (own all 6 to rebirth); nil = pass side-grades
 	paint: { number }, -- RGB 0-255
 	trim: { number },
 }
@@ -171,6 +177,7 @@ export type VehicleDef = {
 Config.Vehicles = {
 	starter_buggy = {
 		id = "starter_buggy",
+		tier = 1,
 		displayName = "Starter Buggy",
 		class = "Buggy",
 		hopSpeed = 12,
@@ -180,6 +187,7 @@ Config.Vehicles = {
 	} :: VehicleDef,
 	pocket_sedan = {
 		id = "pocket_sedan",
+		tier = 1,
 		displayName = "Pocket Sedan",
 		class = "Sedan",
 		hopSpeed = 0,
@@ -189,6 +197,7 @@ Config.Vehicles = {
 	} :: VehicleDef,
 	dune_hopper = {
 		id = "dune_hopper",
+		tier = 1,
 		displayName = "Dune Hopper",
 		class = "Buggy",
 		hopSpeed = 12,
@@ -198,6 +207,7 @@ Config.Vehicles = {
 	} :: VehicleDef,
 	fizz_wagon = {
 		id = "fizz_wagon",
+		tier = 1,
 		displayName = "Fizz Wagon",
 		class = "Sedan",
 		hopSpeed = 0,
@@ -207,6 +217,7 @@ Config.Vehicles = {
 	} :: VehicleDef,
 	haul_hog = {
 		id = "haul_hog",
+		tier = 1,
 		displayName = "Haul Hog",
 		class = "Truck",
 		hopSpeed = 0,
@@ -216,6 +227,7 @@ Config.Vehicles = {
 	} :: VehicleDef,
 	bumble_bus = {
 		id = "bumble_bus",
+		tier = 1,
 		displayName = "Bumble Bus",
 		class = "Bus",
 		hopSpeed = 0,
@@ -223,7 +235,39 @@ Config.Vehicles = {
 		paint = { 255, 214, 10 },
 		trim = { 35, 35, 40 },
 	} :: VehicleDef,
+	-- Stunt Set pass: side-grades with their class's exact stats (looks only, design pillar)
+	hop_rod = {
+		id = "hop_rod",
+		displayName = "Hop Rod",
+		class = "Buggy",
+		hopSpeed = 12,
+		unlock = { coins = 0, stars = 0, pass = "stunt" },
+		paint = { 160, 90, 255 },
+		trim = { 255, 214, 10 },
+	} :: VehicleDef,
+	zippy_coupe = {
+		id = "zippy_coupe",
+		displayName = "Zippy Coupe",
+		class = "Sedan",
+		hopSpeed = 0,
+		unlock = { coins = 0, stars = 0, pass = "stunt" },
+		paint = { 40, 210, 200 },
+		trim = { 30, 30, 40 },
+	} :: VehicleDef,
+	mud_muncher = {
+		id = "mud_muncher",
+		displayName = "Mud Muncher",
+		class = "Truck",
+		hopSpeed = 0,
+		unlock = { coins = 0, stars = 0, pass = "stunt" },
+		paint = { 140, 100, 60 },
+		trim = { 230, 230, 230 },
+	} :: VehicleDef,
 }
+
+-- The 6 launch vehicles in shop order (own all 6 to rebirth)
+Config.TierOneVehicles =
+	{ "starter_buggy", "pocket_sedan", "dune_hopper", "fizz_wagon", "haul_hog", "bumble_bus" }
 
 Config.DefaultVehicle = "starter_buggy"
 -- One vehicle per class for the milestone 1 test track's class picker.
@@ -620,13 +664,14 @@ Config.Maps = {
 	slotSpacing = 1300,
 	maxLoaded = 24,
 	unloadAfter = 60, -- seconds with nobody on it
-	-- Moderation (spec numbers)
-	reportsToHide = 5,
-	reportShare = 0.1, -- or more than 10% of finishers...
-	reportShareFrom = 20, -- ...once this many have finished it
-	reportMinAccountDays = 3,
-	strikeWindowDays = 30,
-	strikesForBan = 3,
+	-- Moderation. nate (2026-11-15): hiding a map or a creator must be hard, so these are stricter than
+	-- the spec's 5 reports / 10% / 3 days / 30 days. An auto-hide needs BOTH rules; only an admin's
+	-- confirmed hide is a creator strike.
+	reportsToHide = 15, -- counted reports...
+	reportShare = 0.25, -- ...and more than 25% of the players who finished it
+	reportMinAccountDays = 30, -- a report counts only from an account 30+ days old that finished the map
+	strikeWindowDays = 90,
+	strikesForBan = 3, -- 3 confirmed hides in 90 days
 	banDays = { 7, 30 }, -- then permanent
 	forever = 2 ^ 31 - 1,
 }
@@ -646,6 +691,66 @@ Config.Economy = {
 	friendBoostMax = 0.50,
 	rebirthBonusPer = 0.05,
 	rebirthBonusMax = 0.50,
+}
+
+-- Robux catalog (spec: Economy > Robux catalog). Prices are guesses to A/B test. Ids are 0 until nate
+-- creates each pass and product in the Creator Dashboard (Monetization) and pastes its id here; with
+-- an id of 0 the shop shows the card but the buy button says "Coming soon".
+Config.Monetization = {
+	passes = {
+		rider = { id = 0, robux = 249, name = "Rider Pass" },
+		vip = { id = 0, robux = 399, name = "VIP" },
+		stunt = { id = 0, robux = 199, name = "Stunt Set" },
+		explosions = { id = 0, robux = 149, name = "Explosion Styles" },
+	},
+	products = {
+		starter = {
+			id = 0,
+			robux = 79,
+			name = "Starter Pack",
+			coins = 1000,
+			items = { "trail_confetti", "hat_pip_foam" },
+		},
+		coins_s = { id = 0, robux = 49, name = "Pile of Coins", coins = 500 },
+		coins_m = { id = 0, robux = 129, name = "Bag of Coins", coins = 1500 },
+		coins_l = { id = 0, robux = 299, name = "Chest of Coins", coins = 4000 },
+		coins_xl = { id = 0, robux = 599, name = "Vault of Coins", coins = 9000 },
+		crate = { id = 0, robux = 50, name = "Crash Crate" },
+		extra_slot = { id = 0, robux = 49, name = "Extra Draft Slot" },
+		-- Starter + Rider + Stunt, 25% under the separate prices, offered once you own one of them
+		bundle = {
+			id = 0,
+			robux = 395,
+			name = "Crash Crew Bundle",
+			passes = { "rider", "stunt" },
+			starter = true,
+		},
+	},
+	coinShop = { "coins_s", "coins_m", "coins_l", "coins_xl" },
+	shopLine = "Nothing here makes you faster or stronger.",
+	-- After the first finish the Starter Pack is offered once (flags.starterOffered)
+	starterOfferDelay = 1.5,
+}
+
+-- Progression (spec: Progression). Mastery: points per vehicle, levels at these cumulative points.
+Config.Progression = {
+	masteryLevels = { 0, 25, 75, 150, 250, 400, 600, 850, 1150, 1500 },
+	masteryPoints = { tracksFinish = 5, bump = 1, brawlRound = 10, destructionPer = 500 },
+	rebirthNeeds = "TierOneVehicles", -- own all 6 launch vehicles
+	rebirthHold = 1.5, -- seconds to hold CONFIRM
+	starUnlocks = { builderColours2 = 15 }, -- stars sinks available now (themes are Update 2)
+}
+
+-- Quests and streak (spec: Progression > Quests and streaks). Pools are in Shared/Quests.
+Config.Quests = {
+	dailyRewards = { 60, 80, 100 }, -- by quest tier
+	weeklyReward = 300,
+	weeklyStars = 5, -- for all 3 weekly quests
+	chestCoins = 150,
+	chestCosmeticChance = 0.3, -- otherwise the coins
+	streakRewards = { 50, 75, 100, "crate_key", 150, 200, "cosmetic" },
+	streakOwnedCoins = 250, -- day 7 when you already own this week's cosmetic
+	giftCoins = 10,
 }
 
 -- Settings: defaults (same as the saved profile) and allowed values (spec: Settings screen)

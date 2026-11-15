@@ -54,6 +54,7 @@ export type MapRecord = {
 	ratingCount: number,
 	hidden: boolean,
 	hiddenAt: number?,
+	confirmed: boolean?, -- an admin confirmed the hide (a creator strike)
 	resubmits: number,
 	featured: boolean,
 	boardEpoch: number,
@@ -264,6 +265,7 @@ local function publish(player: Player, slot: number, b: buffer)
 			ratingCount = if old then old.ratingCount or 0 else 0,
 			hidden = false,
 			hiddenAt = nil,
+			confirmed = nil,
 			-- An edit of a hidden map is its one resubmit (spec: Moderation)
 			resubmits = (if old then old.resubmits or 0 else 0) + (if old and old.hidden then 1 else 0),
 			featured = if old then old.featured == true else false,

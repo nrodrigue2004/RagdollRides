@@ -91,6 +91,21 @@ function EconomyService.funnel(player: Player, step: number, name: string)
 	end)
 end
 
+-- The builder funnel (spec: Analytics > Funnels): 1 Opened builder, 2 First piece, 3 10 pieces, 4 TEST,
+-- 5 Finished test, 6 Publish. Each step is logged once per session.
+local builderLogged: { [Player]: { [number]: boolean } } = {}
+function EconomyService.builderFunnel(player: Player, step: number, name: string)
+	local logged = builderLogged[player] or {}
+	builderLogged[player] = logged
+	if logged[step] then
+		return
+	end
+	logged[step] = true
+	pcall(function()
+		AnalyticsService:LogFunnelStepEvent(player, "Builder", nil, step, name)
+	end)
+end
+
 local function onPlayerAdded(player: Player)
 	friends[player] = friends[player] or {}
 	for _, other in Players:GetPlayers() do
@@ -118,6 +133,7 @@ local function onPlayerRemoving(player: Player)
 	end
 	friends[player] = nil
 	funnelLogged[player] = nil
+	builderLogged[player] = nil
 end
 
 function EconomyService.init()

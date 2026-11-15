@@ -27,7 +27,7 @@ local TracksMath = require(Shared.TracksMath)
 local Services = script.Parent
 local DataService = require(Services.DataService)
 local EconomyService = require(Services.EconomyService)
-local MapBuilder = require(Services.MapBuilder)
+local MapBuilder = require(Shared.MapBuilder)
 local TestTrack = require(Services.TestTrack)
 local VehicleService = require(Services.VehicleService)
 
@@ -59,9 +59,41 @@ end
 -- World-space respawn points per map (for the speed check)
 local respawnPoints: { [string]: { Vector3 } } = {}
 
+-- Every map a run can be on: the starter maps, plus builder maps (a creator's TEST, later published
+-- maps) registered by id. Builder maps are not reachable through Map.Go; their service enters them.
+local mapDefs: { [string]: StarterMaps.MapDef } = table.clone(StarterMaps.byId)
+
+-- A finished run on a builder map: the owning service decides what it means (a TEST records the
+-- creator time; published maps pay in milestone 4). Returns the Run.Result fields.
+TracksService.customFinish = nil :: ((Player, StarterMaps.MapDef, number) -> { [string]: any })?
+
 local function worldPoint(map: StarterMaps.MapDef, x: number, y: number, z: number): Vector3
 	local wx, wy, wz = StarterMaps.toWorld(map, x, y, z)
 	return Vector3.new(wx, wy, wz)
+end
+
+local function indexRespawns(map: StarterMaps.MapDef)
+	local points = {}
+	for _, p in StarterMaps.respawnPoints(map) do
+		table.insert(points, worldPoint(map, p[1], p[2], p[3]))
+	end
+	respawnPoints[map.id] = points
+end
+
+function TracksService.registerMap(def: StarterMaps.MapDef)
+	mapDefs[def.id] = def
+	indexRespawns(def)
+end
+
+function TracksService.unregisterMap(id: string)
+	if StarterMaps.byId[id] == nil then
+		mapDefs[id] = nil
+		respawnPoints[id] = nil
+	end
+end
+
+function TracksService.getMapDef(id: string): StarterMaps.MapDef?
+	return mapDefs[id]
 end
 
 function TracksService.currentMap(player: Player): string?
@@ -82,6 +114,10 @@ local function homeMap(profile: { [string]: any }?): string
 	return StarterMaps.FIRST_MAP
 end
 
+function TracksService.homeMapFor(player: Player): string
+	return homeMap(DataService.get(player))
+end
+
 local function sendGhost(player: Player, mapId: string)
 	local profile = DataService.get(player)
 	local ghost = profile and profile.ghosts[mapId]
@@ -97,7 +133,7 @@ function TracksService.enterMap(player: Player, mapId: string)
 	if mapId == TEST_TRACK then
 		cf = TestTrack.spawnCFrame(1)
 	else
-		local map = StarterMaps.byId[mapId]
+		local map = mapDefs[mapId]
 		if map == nil then
 			return
 		end
@@ -121,9 +157,17 @@ function TracksService.enterMap(player: Player, mapId: string)
 		vehicleId = profile.equippedVehicle
 	end
 	VehicleService.spawn(player, vehicleId, cf)
-	if mapId ~= TEST_TRACK then
+	if mapId ~= TEST_TRACK and StarterMaps.byId[mapId] then
 		sendGhost(player, mapId)
 	end
+end
+
+-- Off every map (the builder): no runs until the next enterMap
+function TracksService.leaveMap(player: Player)
+	playerMap[player] = nil
+	runs[player] = nil
+	lastPositions[player] = nil
+	player:SetAttribute("MapId", nil)
 end
 
 local function chassisOf(player: Player): BasePart?
@@ -162,7 +206,7 @@ local function noteReject(player: Player, reason: string)
 end
 
 local function onStart(player: Player, mapId: string)
-	local map = StarterMaps.byId[mapId]
+	local map = mapDefs[mapId]
 	if map == nil or playerMap[player] ~= mapId then
 		return
 	end
@@ -188,7 +232,7 @@ end
 
 local function onCheckpoint(player: Player, mapId: string, index: number, clientTime: number)
 	local run = runs[player]
-	local map = StarterMaps.byId[mapId]
+	local map = mapDefs[mapId]
 	if run == nil or map == nil or run.mapId ~= mapId or not run.valid then
 		return
 	end
@@ -218,7 +262,7 @@ end
 
 local function onFinish(player: Player, mapId: string, clientTime: number, trailCoins: number)
 	local run = runs[player]
-	local map = StarterMaps.byId[mapId]
+	local map = mapDefs[mapId]
 	if run == nil or map == nil or run.mapId ~= mapId then
 		return
 	end
@@ -245,6 +289,16 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 	local time = elapsed
 	if math.abs(clientTime - elapsed) > 1 then
 		warn(string.format("[Tracks] %s timer off by %.2f s on %s", player.Name, clientTime - elapsed, mapId))
+	end
+	if map.custom then
+		local result = if TracksService.customFinish
+			then TracksService.customFinish(player, map, time)
+			else {}
+		result.ok = if result.ok == nil then true else result.ok
+		result.mapId = mapId
+		result.time = time
+		Net.fire("Run.Result", player, result)
+		return
 	end
 	local entry = profile.tracks[mapId]
 	local daily = profile.daily
@@ -386,7 +440,7 @@ local function sampleRuns(dt: number)
 	local now = os.clock()
 	for player, run in runs do
 		local chassis = chassisOf(player)
-		local map = StarterMaps.byId[run.mapId]
+		local map = mapDefs[run.mapId]
 		if chassis == nil or map == nil then
 			continue
 		end
@@ -437,16 +491,12 @@ function TracksService.init()
 	workspace:SetAttribute("Mode", "Tracks")
 	for _, map in StarterMaps.maps do
 		MapBuilder.build(map)
-		local points = {}
-		for _, p in StarterMaps.respawnPoints(map) do
-			table.insert(points, worldPoint(map, p[1], p[2], p[3]))
-		end
-		respawnPoints[map.id] = points
+		indexRespawns(map)
 	end
 
 	VehicleService.homeFor = function(player: Player): CFrame?
 		local mapId = playerMap[player]
-		local map = mapId and StarterMaps.byId[mapId]
+		local map = mapId and mapDefs[mapId]
 		if map then
 			return MapBuilder.startCFrame(map)
 		end

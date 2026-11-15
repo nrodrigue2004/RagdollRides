@@ -5,8 +5,12 @@
 --   and the next map. RETRY puts you back on the start line.
 -- * Coins: trail coins are picked up here (a distance check) with a rising-pitch ding; the count goes
 --   with Run.Finish and the server clamps it to the map's coins.
--- * Hazards: spinners spin here (from the server's clock, so everyone sees the same angle) and a
---   sweeping bar that reaches the car throws the rider. Pip's Hill respawns by itself after 1 s.
+-- * Moving pieces (spinners, hammers, pistons, tilt decks; Shared/Movers) move here from the server's
+--   clock, so everyone sees the same angle. A hitting part that reaches the car throws the rider (a
+--   piston shoves the car instead). Pip's Hill respawns by itself after 1 s.
+-- * Builder maps: BuilderClient registers its draft here and TESTs it like any map. A test from the
+--   start gate is timed by the server (it proves the map can be finished and sets the creator time);
+--   a practice run from a checkpoint stays on this device. Both end in TestFinished, not the results card.
 -- * Ghosts: your best run on this map drives beside you at 60% opacity; other players' cars are ghosts
 --   too (60% opacity, no collisions).
 -- * Onboarding (first time on a map): DRIVE pulses GAS at the start, JUMP! before Pip's Hill's ramp,
@@ -20,7 +24,9 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local GhostCodec = require(Shared.GhostCodec)
 local MapSpace = require(Shared.MapSpace)
+local Movers = require(Shared.Movers)
 local Net = require(Shared.Net)
+local Signal = require(Shared.Util.Signal)
 local StarterMaps = require(Shared.StarterMaps)
 local TracksMath = require(Shared.TracksMath)
 local VehicleBuilder = require(Shared.VehicleBuilder)
@@ -33,10 +39,14 @@ local LocalPlayer = Players.LocalPlayer
 
 local TracksClient = {}
 
+-- A builder test ended: { ok, time, test = true } from the server, or { practice = true, time }
+TracksClient.TestFinished = Signal.new()
+
 local COIN_RADIUS = 7
 local COIN_STREAK_GAP = 1.2 -- pickups closer together than this climb in pitch
 local GHOST_OPACITY = 0.6
 local RESULT_TIMEOUT = 4
+local PUSH_COOLDOWN = 0.6
 
 local controllers: any = nil
 local map: StarterMaps.MapDef? = nil
@@ -50,9 +60,15 @@ local coinPoints: { Vector3 } = {}
 local lastCoinClock = 0
 local coinStreak = 0
 local cues: { { kind: string, cf: CFrame, size: Vector3, shown: boolean } } = {}
-local sweepers: { { cf: CFrame, size: Vector3, speed: number } } = {}
+local hits: { Movers.Hit } = {}
+local lastPush = 0
 local coinParts: { [BasePart]: CFrame } = {}
-local spinnerParts: { [BasePart]: CFrame } = {}
+local moverParts: { [BasePart]: { pivot: CFrame, offset: CFrame, motion: Movers.Motion } } = {}
+-- Every map this client can drive: the starter maps, plus builder maps registered by id
+local maps: { [string]: StarterMaps.MapDef } = table.clone(StarterMaps.byId)
+-- Builder test: nil (a normal run), "test" (from the start gate, timed by the server) or "practice"
+local testKind: string? = nil
+local practiceFrom = 0
 local ghostRuns: { [string]: { samples: { GhostCodec.Sample }, rate: number } } = {}
 local ghostModel: Model? = nil
 local ghostVehicleId: string? = nil
@@ -183,7 +199,7 @@ end
 local function resetRun()
 	resultToken += 1
 	runState = if map then "ready" else "idle"
-	reached = 0
+	reached = if testKind == "practice" then practiceFrom else 0
 	coinCount = 0
 	coinStreak = 0
 	table.clear(collected)
@@ -202,11 +218,11 @@ local function resetRun()
 end
 
 local function prepareMap(mapId: string?)
-	local current = if mapId then StarterMaps.byId[mapId] else nil
+	local current = if mapId then maps[mapId] else nil
 	map = current
 	table.clear(coinPoints)
 	table.clear(cues)
-	table.clear(sweepers)
+	hits = if current then Movers.hits(current) else {}
 	TracksHud.hideResults()
 	if current == nil then
 		controllers.Vehicle.setKillY(nil)
@@ -224,12 +240,6 @@ local function prepareMap(mapId: string?)
 				cf = MapSpace.pieceCFrame(current, piece),
 				size = Vector3.new(piece.sx, piece.sy, piece.sz),
 				shown = false,
-			})
-		elseif piece.kind == "Spinner" and (piece.axis or "up") == "up" then
-			table.insert(sweepers, {
-				cf = MapSpace.pieceCFrame(current, piece),
-				size = Vector3.new(piece.sx, piece.sy, piece.sz),
-				speed = piece.speed or 90,
 			})
 		end
 	end
@@ -252,7 +262,9 @@ local function startRun()
 	end
 	runState = "running"
 	startClock = os.clock()
-	Net.send("Run.Start", current.id)
+	if testKind ~= "practice" then
+		Net.send("Run.Start", current.id)
+	end
 	TracksHud.hideCue()
 	controllers.Hud.stopPulse("Gas")
 end
@@ -360,16 +372,24 @@ local function finishRun(finishPart: BasePart)
 	runState = "finished"
 	finishTime = elapsed()
 	TracksHud.setTimer(finishTime)
-	Net.send("Run.Finish", current.id, finishTime, coinCount)
 	controllers.Juice.fire("Finish")
 	Confetti.burst(finishPart.Position + Vector3.new(0, 4, 0))
 	hideGhost()
+	if testKind == "practice" then
+		TracksClient.TestFinished:Fire({ practice = true, time = finishTime })
+		return
+	end
+	Net.send("Run.Finish", current.id, finishTime, coinCount)
 	-- No answer (a dropped request): say so rather than leave the player waiting
 	resultToken += 1
 	local token = resultToken
 	task.delay(RESULT_TIMEOUT, function()
 		if resultToken == token and runState == "finished" and not TracksHud.resultsOpen() then
-			showResult({ ok = false, mapId = current.id, nextMap = StarterMaps.nextMap(current.id) })
+			if testKind then
+				TracksClient.TestFinished:Fire({ ok = false, test = true, time = finishTime })
+			else
+				showResult({ ok = false, mapId = current.id, nextMap = StarterMaps.nextMap(current.id) })
+			end
 		end
 	end)
 end
@@ -384,7 +404,9 @@ local function onCheckpoint(index: number, part: BasePart?)
 	end
 	reached = index
 	local t = elapsed()
-	Net.send("Run.Checkpoint", current.id, index, t)
+	if testKind ~= "practice" then
+		Net.send("Run.Checkpoint", current.id, index, t)
+	end
 	hudRunLine()
 	local best = controllers.Profile.track(current.id)
 	if best and best.splits and best.splits[index] then
@@ -427,10 +449,6 @@ local function inBox(cf: CFrame, size: Vector3, point: Vector3, grow: Vector3): 
 		and math.abs(p.Z) <= size.Z / 2 + grow.Z
 end
 
-local function spinAngle(speed: number): number
-	return math.rad(speed) * workspace:GetServerTimeNow() % (2 * math.pi)
-end
-
 local function update(dt: number)
 	TracksHud.update(dt)
 	local t = os.clock()
@@ -443,14 +461,10 @@ local function update(dt: number)
 			part.CFrame = CFrame.new(base.Position) * CFrame.Angles(0, t * 3, 0) * base.Rotation
 		end
 	end
-	for part, base in spinnerParts do
-		if (base.Position - eye).Magnitude < 600 then
-			local angle = spinAngle(part:GetAttribute("Speed") or 90)
-			if part:GetAttribute("Axis") == "across" then
-				part.CFrame = base * CFrame.Angles(angle, 0, 0)
-			else
-				part.CFrame = base * CFrame.Angles(0, angle, 0)
-			end
+	local now = workspace:GetServerTimeNow()
+	for part, info in moverParts do
+		if (info.pivot.Position - eye).Magnitude < 600 then
+			part.CFrame = info.pivot * Movers.transform(info.motion, now) * info.offset
 		end
 	end
 
@@ -485,18 +499,19 @@ local function update(dt: number)
 				end
 			end
 		end
-		-- Sweeping bars throw the rider
+		-- Hitting parts: bars and hammer heads throw the rider, pistons shove the car while they punch out
 		if not ragdolled then
-			for _, sweeper in sweepers do
-				local bar = sweeper.cf * CFrame.Angles(0, spinAngle(sweeper.speed), 0)
-				-- The chassis rides below the bar; grow the box down to where the rider sits
-				local p = bar:PointToObjectSpace(position)
-				if
-					math.abs(p.X) <= sweeper.size.X / 2 + 1.5
-					and math.abs(p.Z) <= sweeper.size.Z / 2 + 2.5
-					and p.Y >= -sweeper.size.Y / 2 - 5
-					and p.Y <= sweeper.size.Y / 2 + 1
-				then
+			for _, hit in hits do
+				if not Movers.touches(hit, now, position) then
+					continue
+				end
+				if hit.part.hit == "push" then
+					if Movers.extending(hit.motion, now) and os.clock() - lastPush >= PUSH_COOLDOWN then
+						lastPush = os.clock()
+						controllers.Vehicle.applyKick(Movers.pushVelocity(hit, now))
+						controllers.Juice.fire("Bounce")
+					end
+				else
 					controllers.Vehicle.hazardHit(nil)
 				end
 			end
@@ -579,6 +594,40 @@ function TracksClient.getRunState(): string
 	return runState
 end
 
+-- Builder maps: register a map definition (PieceCatalog.toMapDef) so it can be driven like any map
+function TracksClient.registerMap(def: StarterMaps.MapDef)
+	maps[def.id] = def
+	if map and map.id == def.id then
+		prepareMap(def.id)
+	end
+end
+
+function TracksClient.unregisterMap(id: string)
+	if StarterMaps.byId[id] == nil then
+		maps[id] = nil
+	end
+end
+
+-- Builder TEST: kind "test" (from the start gate, server timed) or "practice" (from checkpoint
+-- `fromCheckpoint`, this device only); nil goes back to normal runs.
+function TracksClient.setTest(kind: string?, fromCheckpoint: number?)
+	testKind = kind
+	practiceFrom = if kind == "practice" then fromCheckpoint or 0 else 0
+	TracksHud.hideResults()
+	if map then
+		resetRun()
+	end
+end
+
+function TracksClient.getTest(): string?
+	return testKind
+end
+
+-- Show or hide the Tracks HUD (the builder hides it while building)
+function TracksClient.setHudVisible(visible: boolean)
+	TracksHud.setVisible(visible)
+end
+
 local function openPicker()
 	if TracksHud.pickerOpen() then
 		TracksHud.closePicker()
@@ -646,7 +695,34 @@ function TracksClient.start()
 		local index = part:GetAttribute("CoinIndex")
 		setCoinVisible(part, not (isOnMap(part) and collected[index :: number]))
 	end)
-	watchTag("Spinner", spinnerParts)
+	local function addMover(instance: Instance)
+		if not instance:IsA("BasePart") then
+			return
+		end
+		local pivot = instance:GetAttribute("Pivot")
+		local offset = instance:GetAttribute("Offset")
+		if typeof(pivot) ~= "CFrame" or typeof(offset) ~= "CFrame" then
+			return
+		end
+		moverParts[instance] = {
+			pivot = pivot,
+			offset = offset,
+			motion = {
+				motion = instance:GetAttribute("Motion") or "",
+				phase = instance:GetAttribute("Phase") or 0,
+				speed = instance:GetAttribute("Speed") or 0,
+				period = instance:GetAttribute("Period") or 1,
+				amount = instance:GetAttribute("Amount") or 0,
+			},
+		}
+	end
+	CollectionService:GetInstanceAddedSignal("Mover"):Connect(addMover)
+	CollectionService:GetInstanceRemovedSignal("Mover"):Connect(function(instance)
+		moverParts[instance :: BasePart] = nil
+	end)
+	for _, instance in CollectionService:GetTagged("Mover") do
+		addMover(instance)
+	end
 
 	LocalPlayer:GetAttributeChangedSignal("MapId"):Connect(function()
 		prepareMap(LocalPlayer:GetAttribute("MapId"))
@@ -667,6 +743,10 @@ function TracksClient.start()
 			return
 		end
 		resultToken += 1
+		if testKind then
+			TracksClient.TestFinished:Fire(result)
+			return
+		end
 		showResult(result)
 	end)
 	-- The server's speed check: back to the last checkpoint (the run no longer counts)

@@ -6,6 +6,10 @@
 --   tracks = { [mapId] = { best = ms, stars = 0..3, splits = { ms per checkpoint } } }  per-map results
 --   ghosts = { [mapId] = base64 ghost }, ghostOrder = { mapIds, newest last }          best-run ghosts
 --   flags.boardBanDay = yyyymmdd: 3 rejected runs in 10 minutes = no leaderboard posts that day
+--   maps.drafts = { [tostring(slot)] = base64 map buffer } (string keys: DataStores need one key type)
+--   maps.links = { [tostring(slot)] = mapId } a draft's published map (a republish keeps plays/ratings)
+--   maps.lastPublish = unix time of the last publish (the 10 minute cooldown survives a rejoin)
+--   stats.playSeconds = total play time (the 15 minute publish gate)
 
 -- Roblox finds Config beside this module; the Lune test runner (no `script`) uses the file path.
 local Config = if script then require(script.Parent.Config) else (require :: any)("./Config")
@@ -62,9 +66,10 @@ function ProfileSchema.default(): { [string]: any }
 			bestBones = 0,
 			pileups = 0,
 			mapsPublished = 0,
+			playSeconds = 0,
 		},
 		ranked = { season = 0, points = 0, placementsLeft = 5, bestTier = 0 },
-		maps = { drafts = {}, published = {}, extraSlots = 0 },
+		maps = { drafts = {}, published = {}, extraSlots = 0, links = {}, lastPublish = 0 },
 		ratings = {},
 		tut = {
 			pipHill = false,

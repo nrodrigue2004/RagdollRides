@@ -460,6 +460,13 @@ function HudController.stopPulse(controlName: string)
 	pulses[controlName] = nil
 end
 
+-- The whole driving HUD (the builder hides it while building and shows it again to TEST)
+function HudController.setVisible(visible: boolean)
+	if gui then
+		gui.Enabled = visible
+	end
+end
+
 function HudController.getGui(): ScreenGui?
 	return gui
 end

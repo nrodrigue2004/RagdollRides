@@ -83,14 +83,46 @@ local Remotes: { [string]: RemoteDef } = {
 	-- Studio and admins only: start over as a first-time player (to test onboarding)
 	["Dev.ResetProfile"] = { dir = "C2S", schema = {}, rate = 0.2, burst = 1, since = "2" },
 
-	-- Milestone 3 and 4
-	["Map.Publish"] = {
+	-- Milestone 3: the map builder. Slots are 1..15; buffers are MapCodec maps (250 pieces = 2,755 bytes).
+	-- Map.Build: open the builder on a draft slot (0 leaves it). Map.Drafts answers with every slot.
+	["Map.Build"] = {
 		dir = "C2S",
-		schema = { { t = "buffer", maxLen = 4096 }, { t = "buffer", len = { 3 } } },
-		rate = 1 / 600,
-		burst = 1,
+		schema = { { t = "integer", min = 0, max = 15 } },
+		rate = 1,
+		burst = 3,
 		since = "3",
 	},
+	["Map.RequestDrafts"] = { dir = "C2S", schema = {}, rate = 0.5, burst = 2, since = "3" },
+	["Map.Drafts"] = { dir = "S2C", since = "3" },
+	-- Autosave every 30 s, on exit and on Save; the burst covers a save right before TEST or Publish
+	["Map.SaveDraft"] = {
+		dir = "C2S",
+		schema = { { t = "integer", min = 1, max = 15 }, { t = "buffer", maxLen = 4096 } },
+		rate = 0.5,
+		burst = 3,
+		since = "3",
+	},
+	-- TEST from the start gate: the server times it like a run (it proves the map can be finished)
+	["Map.Test"] = {
+		dir = "C2S",
+		schema = { { t = "integer", min = 1, max = 15 }, { t = "buffer", maxLen = 4096 } },
+		rate = 0.5,
+		burst = 3,
+		since = "3",
+	},
+	["Map.TestReady"] = { dir = "S2C", since = "3" }, -- slot, ok, reason key: the car is on the plot
+	-- Publish: slot and the map (its pieces must match the TEST; name ids, tags and flags are in its header).
+	-- The spec's 1 per 10 minutes is the server's publish cooldown; this limit only stops spam.
+	["Map.Publish"] = {
+		dir = "C2S",
+		schema = { { t = "integer", min = 1, max = 15 }, { t = "buffer", maxLen = 4096 } },
+		rate = 0.2,
+		burst = 2,
+		since = "3",
+	},
+	["Map.Published"] = { dir = "S2C", since = "3" }, -- { ok, reason key, mapId, name, wait }
+
+	-- Milestone 4
 	["Map.Rate"] = {
 		dir = "C2S",
 		schema = { { t = "string", max = 40 }, { t = "integer", min = 1, max = 5 } },

@@ -297,6 +297,15 @@ end
 
 export type Goal = { label: string, coins: number, stars: number? }
 
+function TracksHud.setVisible(visible: boolean)
+	if root then
+		root.Visible = visible
+	end
+	if not visible then
+		TracksHud.closePicker()
+	end
+end
+
 function TracksHud.setWallet(coins: number, stars: number, goal: Goal?)
 	starsLabel.Text = tostring(stars)
 	if coins ~= shownCoins then

@@ -1,6 +1,7 @@
 -- MapSpace: piece frames in world space, shared by the server's MapBuilder and the client's TracksClient
 -- so both agree on where every piece is (Roblox types; the pure maths is in StarterMaps).
--- A piece's frame: its position, then yaw, then pitch (positive yaw turns left, positive pitch climbs).
+-- A piece's frame: its position, then yaw, then pitch, then roll (positive yaw turns left, positive
+-- pitch climbs). Builder maps use the same frames (PieceCatalog.toMapDef makes a MapDef).
 
 local StarterMaps = require(script.Parent.StarterMaps)
 
@@ -15,6 +16,7 @@ function MapSpace.pieceCFrame(map: StarterMaps.MapDef, piece: StarterMaps.Piece)
 	return CFrame.new(MapSpace.point(map, piece.x, piece.y, piece.z))
 		* CFrame.Angles(0, math.rad(piece.yaw), 0)
 		* CFrame.Angles(math.rad(piece.pitch), 0, 0)
+		* CFrame.Angles(0, 0, math.rad(piece.roll or 0))
 end
 
 -- Where a car is put down at the start of a map: ground level, facing along the road

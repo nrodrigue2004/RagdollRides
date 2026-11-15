@@ -32,6 +32,7 @@ type Session = {
 	pendingSave: boolean,
 	sendQueued: boolean,
 	released: boolean,
+	playClock: number, -- os.clock() play time was last added to stats.playSeconds
 }
 
 local store: DataStore? = nil
@@ -134,12 +135,33 @@ local function saveToStore(player: Player, session: Session, release: boolean): 
 	return false
 end
 
+-- Play time goes into stats.playSeconds at every save (the publish gate needs 15 minutes)
+local function addPlayTime(session: Session)
+	local now = os.clock()
+	session.profile.stats.playSeconds += math.max(0, now - session.playClock)
+	session.playClock = now
+end
+
+function DataService.playSeconds(player: Player): number
+	local session = sessions[player]
+	if not session then
+		return 0
+	end
+	addPlayTime(session)
+	return session.profile.stats.playSeconds
+end
+
+function DataService.isMemoryMode(): boolean
+	return memoryMode
+end
+
 -- Save now. release = the player is leaving (drops the session lock).
 function DataService.save(player: Player, release: boolean?): boolean
 	local session = sessions[player]
 	if not session or not session.canSave or session.released then
 		return false
 	end
+	addPlayTime(session)
 	if memoryMode then
 		memoryProfiles[player.UserId] = ProfileSchema.deepCopy(session.profile)
 		if release then
@@ -258,6 +280,7 @@ local function onPlayerAdded(player: Player)
 				pendingSave = false,
 				sendQueued = false,
 				released = false,
+				playClock = os.clock(),
 			}
 			DataService.save(player, true)
 			sessions[player] = nil
@@ -272,6 +295,7 @@ local function onPlayerAdded(player: Player)
 		pendingSave = false,
 		sendQueued = false,
 		released = false,
+		playClock = os.clock(),
 	}
 	sessions[player] = session
 	ProfileSchema.rollDay(session.profile, os.time())

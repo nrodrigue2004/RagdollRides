@@ -7,6 +7,10 @@ local Config = require("../src/shared/Config")
 local Damage = require("../src/shared/Damage")
 local DamageModel = require("../src/shared/DamageModel")
 local GhostCodec = require("../src/shared/GhostCodec")
+local MapCodec = require("../src/shared/MapCodec")
+local MapNames = require("../src/shared/MapNames")
+local MapRules = require("../src/shared/MapRules")
+local PieceCatalog = require("../src/shared/PieceCatalog")
 local ProfileSchema = require("../src/shared/ProfileSchema")
 local StarterMaps = require("../src/shared/StarterMaps")
 local TracksMath = require("../src/shared/TracksMath")
@@ -975,6 +979,254 @@ test("profile: client view shows only display data", function()
 	check(profile.flags.boardBanDay == 0, "board ban flag defaults off")
 end)
 
+local function entry(key: string, fields: { [string]: number }?): PieceCatalog.Entry
+	local e = { t = PieceCatalog.byKey[key].id, x = 0, y = 0, z = 0, r = 0, tilt = 0, s = 0, c = 0, p = 0 }
+	for k, v in fields or {} do
+		(e :: any)[k] = v
+	end
+	return e
+end
+
+test("builder: piece catalog is complete", function()
+	check(#PieceCatalog.defs == 20, "20 pieces (spec)")
+	for index, def in PieceCatalog.defs do
+		check(def.id == index, def.key .. " id is its position")
+		check(def.sizes == 1 or def.sizes == 3, def.key .. " sizes")
+		check(#def.footprint == def.sizes * 2, def.key .. " footprint per size")
+		check(#def.label <= 12 and #string.split(def.label, " ") <= 2, def.key .. " label is 2 words at most")
+		check(def.cost >= 1, def.key .. " costs parts")
+		for size = 0, def.sizes - 1 do
+			local pieces = PieceCatalog.expand(entry(def.key, { s = size }), 1)
+			check(#pieces >= 1, def.key .. " expands")
+			for _, p in pieces do
+				check(p.sx > 0 and p.sy > 0 and p.sz > 0, def.key .. " has a size")
+				check(p.x == p.x and p.y == p.y and p.z == p.z, def.key .. " position is a number")
+			end
+		end
+	end
+	check(
+		#PieceCatalog.PALETTE == 24 and PieceCatalog.FREE_COLOURS == 12,
+		"12 colours free, 24 with VIP (spec)"
+	)
+	check(
+		PieceCatalog.MOTION.spinner.speed == 90 and PieceCatalog.MOTION.hammer.period == 2.5,
+		"spinner and hammer (spec)"
+	)
+	check(
+		PieceCatalog.MOTION.piston.period == 2 and PieceCatalog.MOTION.tilt.angle == 15,
+		"piston and tilt (spec)"
+	)
+end)
+
+test("builder: road pieces join end to end on the grid", function()
+	-- A straight road's exit is its length ahead
+	local function exitOf(e: PieceCatalog.Entry): (number, number, number, number)
+		local x, y, z, yaw = PieceCatalog.exit(e)
+		return x :: number, y :: number, z :: number, yaw :: number
+	end
+	local x, y, z, yaw = exitOf(entry("road", { s = 1 }))
+	near(x, 0, 1e-6, "road exit x")
+	near(z, -32, 1e-6, "road exit 32 ahead (-Z)")
+	check(y == 0 and yaw == 0, "road exit height and heading")
+	-- A 90 degree curve turns left and lands on the 4-stud snap grid
+	x, y, z, yaw = exitOf(entry("curve90"))
+	near(x, -48, 1e-6, "curve90 exit x")
+	near(z, -48, 1e-6, "curve90 exit z")
+	near(yaw, 90, 1e-9, "curve90 turns left 90")
+	check(
+		math.abs(x / 4 - math.round(x / 4)) < 1e-6 and math.abs(z / 4 - math.round(z / 4)) < 1e-6,
+		"curve90 exit on the grid"
+	)
+	-- Turned 90 degrees, a 64 road heads along -X
+	x, _, z = exitOf(entry("road", { s = 2, r = 6 }))
+	near(x, -64, 1e-6, "turned road exit x")
+	near(z, 0, 1e-6, "turned road exit z")
+	-- A slope climbs its rise
+	_, y = exitOf(entry("slope", { s = 2 }))
+	check(y == 18, "large slope climbs 18")
+	check(PieceCatalog.exit(entry("block")) == nil, "blocks have no exit")
+	-- Curve segments overlap rather than gap: each is at least its share of the outer arc
+	local segments = PieceCatalog.expand(entry("curve90"), nil)
+	check(#segments == 3, "curve90 is 3 segments")
+	local outerArc = (PieceCatalog.CURVE_RADIUS + PieceCatalog.ROAD_WIDTH / 2) * math.rad(30)
+	check(segments[1].sz >= outerArc - 0.5, "segment covers the outer arc")
+end)
+
+test("builder: tilted pieces sit on their floor", function()
+	local flat = PieceCatalog.expand(entry("block", { s = 2, y = 10 }), nil)[1]
+	near(flat.y - flat.sy / 2, 10, 1e-6, "flat block sits on y")
+	local stood = PieceCatalog.expand(entry("block", { s = 2, y = 10, tilt = 1 }), nil)[1]
+	near(stood.y - stood.sz / 2, 10, 1e-6, "block turned on X sits on y")
+	check(stood.pitch == 90, "tilt 1 is a quarter turn on X")
+	local rolled = PieceCatalog.expand(entry("wall", { s = 2, tilt = 4 }), nil)[1]
+	check(rolled.roll == 90, "tilt 4 is a quarter turn on Z")
+	near(rolled.y - rolled.sx / 2, 0, 1e-6, "rolled wall stands on its end")
+	local slab = PieceCatalog.expand(entry("platform", { s = 1, tilt = 1 }), nil)[1]
+	check(slab.kind == "Block", "a tilted platform becomes a slab")
+	local ramp = PieceCatalog.expand(entry("road", { tilt = 1 }), nil)[1]
+	check(ramp.pitch == 0, "roads never tilt")
+end)
+
+test("builder: map codec round trip", function()
+	local map = MapCodec.empty()
+	MapCodec.setFullDamage(map, true)
+	map.tags = 0b101
+	map.name = { 3, 80, 40 }
+	table.insert(map.pieces, entry("start"))
+	table.insert(map.pieces, entry("road", { x = -40, y = 200, z = 512, r = 23, s = 2, c = 24, p = 255 }))
+	table.insert(map.pieces, entry("block", { x = 6, z = -6, tilt = 6, s = 1, c = 3 }))
+	table.insert(map.pieces, entry("finish", { z = -100 }))
+	local b = MapCodec.encode(map)
+	check(buffer.len(b) == MapCodec.HEADER + 4 * MapCodec.PIECE, "8 + 11 bytes a piece (spec)")
+	local back = MapCodec.decode(b)
+	check(back ~= nil, "decodes")
+	if back then
+		check(MapCodec.fullDamage(back) and back.tags == 0b101, "flags and tags")
+		check(back.name[1] == 3 and back.name[2] == 80 and back.name[3] == 40, "name word ids")
+		check(MapCodec.count(b) == 4, "count without decoding")
+		check(#back.pieces == 4, "piece count")
+		for index, original in map.pieces do
+			local copy = back.pieces[index]
+			for _, key in { "t", "x", "y", "z", "r", "tilt", "s", "c", "p" } do
+				check((copy :: any)[key] == (original :: any)[key], string.format("piece %d %s", index, key))
+			end
+		end
+	end
+	check(
+		MapCodec.fingerprint(b) == MapCodec.fingerprint(MapCodec.encode(back :: any)),
+		"fingerprint is stable"
+	)
+	local renamed = MapCodec.decode(b) :: any
+	renamed.name = { 9, 9, 9 }
+	renamed.tags = 0
+	local b2 = MapCodec.encode(renamed)
+	check(
+		MapCodec.fingerprint(b2, MapCodec.PIECES_FROM) == MapCodec.fingerprint(b, MapCodec.PIECES_FROM),
+		"settings changes keep the tested pieces"
+	)
+	check(MapCodec.fingerprint(b2) ~= MapCodec.fingerprint(b), "but change the whole buffer")
+	MapCodec.setFullDamage(map, false)
+	check(not MapCodec.fullDamage(map), "full damage off")
+	-- Bad bytes are refused, never half read
+	check(MapCodec.decode(buffer.create(3)) == nil, "too short")
+	local wrong = buffer.create(MapCodec.HEADER + 5)
+	buffer.writeu8(wrong, 0, MapCodec.VERSION)
+	buffer.writeu16(wrong, 6, 1)
+	check(MapCodec.decode(wrong) == nil, "wrong length")
+	local future = MapCodec.encode(MapCodec.empty())
+	buffer.writeu8(future, 0, 99)
+	check(MapCodec.decode(future) == nil, "unknown version")
+	local big = MapCodec.empty()
+	for _ = 1, MapCodec.MAX_PIECES do
+		table.insert(big.pieces, entry("road"))
+	end
+	local full = MapCodec.encode(big)
+	check(buffer.len(full) <= 4096, "a full map fits the remote's 4 KB")
+end)
+
+test("builder: limits", function()
+	local map = MapCodec.empty()
+	check(MapRules.checkDraft(map), "an empty draft is fine")
+	check(not MapRules.checkPlayable(map), "but cannot be driven")
+	table.insert(map.pieces, entry("start"))
+	table.insert(map.pieces, entry("road", { z = -2 }))
+	table.insert(map.pieces, entry("finish", { z = -20 }))
+	check(MapRules.checkPlayable(map), "start + finish is playable")
+	check(not MapRules.canAdd(map, PieceCatalog.byKey.start.id), "one start")
+	check(not MapRules.canAdd(map, PieceCatalog.byKey.finish.id), "one finish")
+	check(MapRules.canAdd(map, PieceCatalog.byKey.road.id), "roads still fit")
+	-- Entries
+	check(not MapRules.checkEntry(entry("road", { x = 1 })), "odd x is off the normal grid")
+	check(MapRules.checkEntry(entry("road", { x = 1 }), { vip = true }), "VIP fine grid")
+	check(not MapRules.checkEntry(entry("road", { c = 13 })), "VIP colours need VIP")
+	check(MapRules.checkEntry(entry("road", { c = 24 }), { vip = true }), "24 colours with VIP")
+	check(not MapRules.checkEntry(entry("road", { tilt = 1 })), "roads cannot tilt")
+	check(MapRules.checkEntry(entry("block", { tilt = 6 })), "blocks can")
+	check(not MapRules.checkEntry(entry("road", { s = 3 })), "3 sizes at most")
+	check(not MapRules.checkEntry(entry("start", { s = 1 })), "the start has one size")
+	check(not MapRules.checkEntry(entry("road", { x = 258 })), "x past 512 studs is outside")
+	check(not MapRules.checkEntry(entry("road", { y = -2 })), "below the floor is outside")
+	check(
+		not MapRules.checkEntry({ t = 99, x = 0, y = 0, z = 0, r = 0, tilt = 0, s = 0, c = 0, p = 0 }),
+		"unknown piece"
+	)
+	-- Counted limits
+	local moving = MapCodec.empty()
+	for _ = 1, MapRules.LIMITS.moving do
+		table.insert(moving.pieces, entry("spinner"))
+	end
+	check(MapRules.checkDraft(moving), "12 moving pieces")
+	check(not MapRules.canAdd(moving, PieceCatalog.byKey.hammer.id), "no 13th moving piece")
+	table.insert(moving.pieces, entry("piston"))
+	check(not MapRules.checkDraft(moving), "13 moving pieces refused")
+	local parts = MapCodec.empty()
+	for _ = 1, 200 do
+		table.insert(parts.pieces, entry("rampBig"))
+	end
+	check(MapRules.count(parts).parts == 400 and MapRules.checkDraft(parts), "400 parts is the limit")
+	check(not MapRules.canAdd(parts, PieceCatalog.byKey.road.id), "the 401st part is refused")
+	local checkpoints = MapCodec.empty()
+	for _ = 1, 11 do
+		table.insert(checkpoints.pieces, entry("checkpoint"))
+	end
+	check(not MapRules.checkDraft(checkpoints), "10 checkpoints at most")
+	local tagged = MapCodec.empty()
+	tagged.tags = 0b1111
+	check(not MapRules.checkDraft(tagged), "3 tags at most")
+	local named = MapCodec.empty()
+	named.name = { 1, 999, 1 }
+	check(not MapRules.checkDraft(named), "name word ids must exist")
+	named.name = { 1, 2, 3 }
+	check(MapRules.checkDraft(named), "a real name is fine")
+end)
+
+test("builder: preset names and tags", function()
+	check(#MapNames.ADJECTIVES >= 50 and #MapNames.NOUNS >= 50 and #MapNames.PLACES >= 30, "enough words")
+	check(MapNames.format(1, 1, 1) == "Wobbly Pickle Canyon", "name format")
+	check(MapNames.format(1, 1, 1, 2) == "Wobbly Pickle Canyon 2", "taken names get a number")
+	check(
+		MapNames.valid(1, 1, 1) and not MapNames.valid(0, 1, 1) and not MapNames.valid(1, 999, 1),
+		"ids checked"
+	)
+	local seen = {}
+	for _, list in { MapNames.ADJECTIVES, MapNames.NOUNS, MapNames.PLACES } do
+		for _, word in list do
+			check(not seen[word], "no repeated word: " .. word)
+			seen[word] = true
+			check(word:match("^[%a %-]+$") ~= nil, "plain words only: " .. word)
+		end
+	end
+	check(
+		MapNames.validTags(0b111) and not MapNames.validTags(0b1111) and not MapNames.validTags(256),
+		"tag masks"
+	)
+	local names = MapNames.tagNames(0b100001)
+	check(#names == 2 and names[1] == "Easy" and names[2] == "Jumps", "tag names")
+end)
+
+test("builder: a builder map drives like a starter map", function()
+	local entries = {
+		entry("start"),
+		entry("road", { s = 2 }),
+		entry("checkpoint", { z = -32 }),
+		entry("spinner", { z = -40 }),
+		entry("checkpoint", { z = -50 }),
+		entry("finish", { z = -60 }),
+	}
+	local def = PieceCatalog.toMapDef(entries, { id = "test_1", offset = { 0, 0, 6000 } }) :: any
+	check(def.checkpoints == 2 and def.custom == true, "checkpoints counted")
+	local cp2 = StarterMaps.find(def, "Checkpoint", 2)
+	check(
+		cp2 ~= nil and cp2.z < StarterMaps.find(def, "Checkpoint", 1).z,
+		"checkpoints numbered in placement order"
+	)
+	check(StarterMaps.startPiece(def) ~= nil and StarterMaps.find(def, "Finish") ~= nil, "start and finish")
+	check(#StarterMaps.respawnPoints(def) == 3, "respawn at the start and each checkpoint")
+	check(StarterMaps.killY(def) < 0, "kill height under the floor")
+	local wx, _, wz = StarterMaps.toWorld(def, 0, 0, 0)
+	check(wx == 0 and wz == 6000, "plot offset")
+end)
+
 ---------------------------------------------------------------------------
 -- Optional: check the built place file has the scripts in the right services
 local placePath = process.args[1]
@@ -998,6 +1250,12 @@ if placePath then
 				"ProfileSchema",
 				"StarterMaps",
 				"MapSpace",
+				"MapBuilder",
+				"MapCodec",
+				"MapNames",
+				"MapRules",
+				"Movers",
+				"PieceCatalog",
 				"TracksMath",
 				"PoseCodec",
 				"VehicleBuilder",
@@ -1044,7 +1302,6 @@ if placePath then
 				"CollisionGroups",
 				"DataService",
 				"EconomyService",
-				"MapBuilder",
 				"TestTrack",
 				"TracksService",
 				"VehicleService",

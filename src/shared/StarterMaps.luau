@@ -25,7 +25,10 @@ export type Piece = {
 	axis: string?, -- spinners: "up" (a sweeping bar, the default) or "across" (a roller across the road)
 	label: string?, -- preset sign text (ours, never player text)
 	material: string?,
-	color: string?,
+	-- Builder pieces (PieceCatalog.expand)
+	roll: number?, -- degrees, after yaw and pitch
+	color: number?, -- PieceCatalog.PALETTE index (nil = the kind's own colour)
+	phase: number?, -- moving pieces: 0..1 of a cycle
 }
 
 export type MapDef = {
@@ -42,6 +45,8 @@ export type MapDef = {
 	pieces: { Piece },
 	checkpoints: number,
 	coins: number,
+	custom: boolean?, -- a player's builder map (PieceCatalog.toMapDef)
+	fullDamage: boolean?, -- builder maps: the creator turned on full damage
 }
 
 local ROAD_WIDTH = 30

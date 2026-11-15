@@ -570,6 +570,29 @@ Config.Tracks = {
 	pipHillStars = 1,
 }
 
+---------------------------------------------------------------------------
+-- Map builder (spec: Map builder > Grid and limits, Publish rules). Piece limits live in Shared/MapRules.
+---------------------------------------------------------------------------
+Config.Builder = {
+	draftSlots = 3, -- free
+	vipDraftSlots = 10,
+	maxDraftSlots = 15, -- with Extra Slot products
+	livePublished = 5, -- free
+	vipLivePublished = 15,
+	publishCooldown = 600, -- 1 publish per 10 minutes
+	minFinishes = 1, -- before the first publish: 1 finished Tracks run
+	minPlaySeconds = 900, -- and 15 minutes of play
+	boardResetChange = 0.1, -- a republish that moves the creator time over 10% resets the leaderboard
+	autosaveInterval = 30,
+	undoSteps = 50,
+	-- Build plots: one per player in this server, far from the starter maps (map space is centred on it)
+	plotOrigin = { 0, 0, 6000 },
+	plotSpacing = 1300,
+	maxPlots = 16,
+	buildBatch = 40, -- server builds of player maps: pieces per frame (spec: Map loading)
+	testTimeout = 4, -- seconds a TEST waits for the server to put the car on the plot
+}
+
 -- The next-goal bar shows the cheapest goal not yet afforded (the shop arrives in milestone 5).
 Config.Goals = {
 	{ id = "starter_paint", label = "Starter paint", coins = 200 },

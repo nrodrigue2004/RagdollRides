@@ -53,7 +53,39 @@ function CameraController.setReducedMotion(value: boolean)
 	reducedMotion = value
 end
 
+function CameraController.isReducedMotion(): boolean
+	return reducedMotion
+end
+
+-- Hit-stop: the camera holds still for a moment (physics keeps running). Off with reduced motion.
+local frozenUntil = 0
+function CameraController.freeze(duration: number)
+	if reducedMotion then
+		return
+	end
+	frozenUntil = math.max(frozenUntil, os.clock() + duration)
+end
+
+-- Something else (the crash replay) drives the camera: override(dt) returns the camera CFrame and FOV.
+local override: ((number) -> (CFrame, number))? = nil
+function CameraController.setOverride(fn: ((number) -> (CFrame, number))?)
+	override = fn
+	if fn == nil then
+		position = nil -- snap back behind the car
+	end
+end
+
 local function update(dt: number)
+	if override then
+		local cf, overrideFov = override(dt)
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = cf
+		camera.FieldOfView = overrideFov
+		return
+	end
+	if os.clock() < frozenUntil then
+		return
+	end
 	local vehicle = controllers.Vehicle.getState()
 	if not vehicle or not vehicle.chassis.Parent then
 		return

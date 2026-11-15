@@ -114,13 +114,15 @@ local function render(dt: number)
 		local airborne = bit32.band(remote.flags, PoseCodec.FLAG_AIRBORNE) ~= 0
 		local skidding = bit32.band(remote.flags, PoseCodec.FLAG_SKIDDING) ~= 0
 		remote.steer += (remote.targetSteer - remote.steer) * blend
-		for _, w in remote.wheels do
+		for index, w in remote.wheels do
 			w.compression += (w.targetCompression - w.compression) * blend
 			local extension = class.suspensionTravel - w.compression
 			w.spin = (w.spin - forwardSpeed / class.wheelRadius * dt) % (math.pi * 2)
 			local steer = if w.steered then remote.steer else 0
+			local camber = if controllers.Damage then controllers.Damage.camber(remote.model, index) else 0
+			local side = if index == 1 or index == 3 then -1 else 1
 			w.motor.Transform = CFrame.new(0, -extension, 0)
-				* CFrame.Angles(0, -steer, 0)
+				* CFrame.Angles(0, -steer, math.rad(camber * side))
 				* CFrame.Angles(w.spin, 0, 0)
 			w.grounded = not airborne
 			w.contact = cf:PointToWorldSpace(w.mount - Vector3.new(0, extension + class.wheelRadius, 0))

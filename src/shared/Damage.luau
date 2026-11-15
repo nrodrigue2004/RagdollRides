@@ -1,7 +1,6 @@
 --!strict
 -- Damage: impact value and crash tiers (pure functions, unit tested).
--- Milestone 1 uses impact and tiers to decide feedback and rider ejection. Zone health, panel states,
--- handling effects and explosions are added in milestone 1b on top of these functions.
+-- Impact and tiers decide feedback and rider ejection; DamageModel turns impacts into zone damage.
 
 local Damage = {}
 

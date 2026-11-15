@@ -67,12 +67,25 @@ type Sequence = {
 	from: CFrame,
 	to: CFrame,
 	swapped: boolean,
+	script: ((number) -> CFrame?)?,
+	onFinish: (() -> ())?,
 }
 
 local controllers: any = nil
 local state: any = nil -- the current vehicle's state, or nil
 local settings = { steerAssist = "High" } -- saved settings arrive in milestone 2
 local ZERO_INPUT = { throttle = 0, brake = 0, steer = 0, lean = 0, handbrake = false, analogSteer = false }
+-- Damage effects on handling (DamageController sets these from the zone numbers; spec: Damage zones)
+local CLEAN_HANDLING = {
+	topSpeed = 1,
+	drive = 1,
+	engineDead = false,
+	steerPull = 0,
+	grip = { 1, 1, 1, 1 },
+	lost = { false, false, false, false },
+	smoke = 0,
+}
+local renderFrozenUntil = 0
 
 local function rotateAround(v: Vector3, axis: Vector3, angle: number): Vector3
 	return CFrame.fromAxisAngle(axis, angle):VectorToWorldSpace(v)
@@ -221,6 +234,7 @@ local function setup(model: Model)
 		hopTimer = 0,
 		sequence = nil :: Sequence?,
 		driverPresent = true,
+		handling = CLEAN_HANDLING,
 		checkpoint = yawOnly((model:GetAttribute("SpawnCFrame") :: CFrame?) or chassis.CFrame),
 		checkpointIndex = 0,
 		poseTimer = 0,
@@ -250,6 +264,9 @@ local function setup(model: Model)
 			lateralSlip = 0,
 			spin = 0,
 			visualExtension = class.suspensionTravel,
+			index = index,
+			lost = false,
+			axleDrag = false,
 		})
 	end
 
@@ -310,7 +327,22 @@ local function runSequence(s, dt: number)
 	local seq = s.sequence :: Sequence
 	seq.t += dt
 	local alpha = math.clamp(seq.t / seq.duration, 0, 1)
-	if seq.kind == "flip" then
+	if seq.kind == "script" then
+		-- A scripted hold (the crash replay): the script places the car each frame until it returns nil
+		local cf = (seq.script :: (number) -> CFrame?)(dt)
+		if cf == nil then
+			s.sequence = nil
+			s.skipImpactFrames = 3
+			s.lastForce = Vector3.zero
+			if seq.onFinish then
+				seq.onFinish()
+			end
+			s.lastVelocity = s.chassis.AssemblyLinearVelocity
+			return
+		end
+		s.model:PivotTo(cf)
+		alpha = 0
+	elseif seq.kind == "flip" then
 		local eased = alpha * alpha * (3 - 2 * alpha)
 		s.model:PivotTo(seq.from:Lerp(seq.to, eased))
 	elseif seq.kind == "reset" and not seq.swapped and seq.t >= seq.duration / 2 then
@@ -385,8 +417,24 @@ local function step(dt: number)
 	local drivenGrounded = 0
 	local normalSum = Vector3.zero
 	local dampingImpulse = Vector3.zero
+	local handling = s.handling
 	for _, w in s.wheels do
 		local mountWorld = cf:PointToWorldSpace(w.mount)
+		w.lost = handling.lost[w.index] == true
+		if w.lost then
+			-- No wheel: no suspension. The bare axle drags if that corner is on the ground.
+			local axle = workspace:Raycast(mountWorld, -up * (class.wheelRadius * 0.6 + 0.3), s.params)
+			w.axleDrag = axle ~= nil
+			if axle then
+				w.contact = axle.Position
+				w.normal = axle.Normal
+			end
+			w.compression, w.overshoot, w.spring, w.load = 0, 0, 0, 0
+			w.grounded = false
+			w.lateralSlip = 0
+			continue
+		end
+		w.axleDrag = false
 		local compressionSpeed = -chassis:GetVelocityAtPosition(mountWorld):Dot(up)
 		local lookahead = math.max(0, compressionSpeed) * dt
 		local result = workspace:Raycast(mountWorld, -up * (reach + lookahead), s.params)
@@ -436,6 +484,9 @@ local function step(dt: number)
 		local slipAngle = math.atan2(velocity:Dot(right), forwardSpeed)
 		steerAngle += assist * slipAngle
 	end
+	if grounded >= 2 and handling.steerPull ~= 0 then
+		steerAngle += math.rad(handling.steerPull) -- a damaged wheel pulls the car toward it
+	end
 	steerAngle = math.clamp(steerAngle, -math.rad(drive.maxSteerAtZero), math.rad(drive.maxSteerAtZero))
 	s.steerAngle = steerAngle
 
@@ -444,24 +495,40 @@ local function step(dt: number)
 	local brakeAmount = if braking then (if forwardSpeed > 1 then input.brake else input.throttle) else 0
 	local reversing = input.brake > 0 and forwardSpeed <= 1 and input.throttle == 0
 	local driveTotal = 0
+	local topSpeed = class.topSpeed * handling.topSpeed
 	if input.throttle > 0 and not braking then
 		driveTotal = mass
 			* s.a0
-			* VehicleMath.torqueCurve(math.max(forwardSpeed, 0) / class.topSpeed, drive.torqueFlatFraction)
+			* VehicleMath.torqueCurve(math.max(forwardSpeed, 0) / topSpeed, drive.torqueFlatFraction)
 			* input.throttle
 	elseif reversing then
-		local reverseTop = class.topSpeed * drive.reverseTopSpeedFraction
+		local reverseTop = topSpeed * drive.reverseTopSpeedFraction
 		driveTotal = -mass
 			* s.a0
 			* VehicleMath.torqueCurve(math.max(-forwardSpeed, 0) / reverseTop, drive.torqueFlatFraction)
 			* input.brake
 	end
+	driveTotal *= if handling.engineDead then 0 else handling.drive
 	local brakeTotal = mass * s.a0 * drive.brakeMultiplier * brakeAmount
 	local coasting = driveTotal == 0 and brakeTotal == 0
 
 	local totalForce = Vector3.zero
 	local totalTorque = Vector3.zero
 	for _, w in s.wheels do
+		if w.lost and w.axleDrag then
+			-- A dragging axle: friction against the ground at that corner
+			local n = w.normal
+			local slide = chassis:GetVelocityAtPosition(w.contact)
+			slide -= n * slide:Dot(n)
+			local speed = slide.Magnitude
+			if speed > 0.05 then
+				local cap = cornerMass * gravity * Config.Damage.handling.axleDragG
+				local drag = -slide.Unit * math.min(cap, speed * cornerMass / dt)
+				totalForce += drag
+				totalTorque += (w.contact - com):Cross(drag)
+			end
+			continue
+		end
 		if not w.grounded then
 			continue
 		end
@@ -480,7 +547,9 @@ local function step(dt: number)
 		w.lateralSlip = lateral
 
 		local handbraking = input.handbrake and w.rear
-		local mu = class.grip * (if handbraking then drive.handbrakeRearGripFraction else 1)
+		local mu = class.grip
+			* (if handbraking then drive.handbrakeRearGripFraction else 1)
+			* (handling.grip[w.index] or 1)
 		local maxForce = mu * w.load
 		local fy = VehicleMath.lateralForce(lateral, lateralStiffness, maxForce)
 		local fx = 0
@@ -769,18 +838,24 @@ local function render(dt: number)
 	if not s or not s.chassis.Parent then
 		return
 	end
+	if os.clock() < renderFrozenUntil then
+		return -- hit-stop: wheels and effects hold still for a moment (physics keeps running)
+	end
 	local class = s.class
 	local look = s.chassis.CFrame.LookVector
 	local forwardSpeed = s.chassis.AssemblyLinearVelocity:Dot(look)
 	local blend = 1 - math.exp(-dt / 0.03)
+	local damage = controllers.Damage
 	for _, w in s.wheels do
 		local target = if w.grounded then class.suspensionTravel - w.compression else class.suspensionTravel
 		w.visualExtension += (target - w.visualExtension) * blend
 		w.spin -= forwardSpeed / class.wheelRadius * dt
 		w.spin %= math.pi * 2
 		local steer = if w.steered then s.steerAngle else 0
+		local camber = if damage then damage.camber(s.model, w.index) else 0
+		local side = if w.index == 1 or w.index == 3 then -1 else 1
 		w.motor.Transform = CFrame.new(0, -w.visualExtension, 0)
-			* CFrame.Angles(0, -steer, 0)
+			* CFrame.Angles(0, -steer, math.rad(camber * side))
 			* CFrame.Angles(w.spin, 0, 0)
 	end
 	if s.effects then
@@ -800,13 +875,63 @@ function VehicleController.getChassis(): BasePart?
 	return state and state.chassis
 end
 
-function VehicleController.ejectRider()
+function VehicleController.ejectRider(extraUp: number?)
 	local s = state
 	if not s or not s.driverPresent or not controllers.Ragdoll then
 		return
 	end
 	s.driverPresent = false
-	controllers.Ragdoll.eject(s.chassis.AssemblyLinearVelocity)
+	controllers.Ragdoll.eject(s.chassis.AssemblyLinearVelocity, extraUp)
+end
+
+-- Damage effects on handling (from DamageModel.handling)
+function VehicleController.setHandling(handling)
+	if state then
+		state.handling = handling or CLEAN_HANDLING
+	end
+end
+
+-- A scripted change of velocity (shockwaves, the explosion hop); never counted as a crash
+function VehicleController.applyKick(deltaV: Vector3, angular: Vector3?)
+	local s = state
+	if not s or s.sequence then
+		return
+	end
+	s.chassis:ApplyImpulse(deltaV * s.mass)
+	s.scriptedDeltaV += deltaV
+	if angular then
+		s.chassis.AssemblyAngularVelocity += angular
+	end
+end
+
+-- Hold the car on a script (the crash replay). script(dt) returns where the car is this frame, or nil
+-- to finish, after which onFinish runs (to give the car back its speed). Returns a handle;
+-- isScriptActive(handle) is false once anything else took over the car.
+function VehicleController.runScripted(script: (number) -> CFrame?, onFinish: (() -> ())?): any
+	local s = state
+	if not s then
+		return nil
+	end
+	s.sequence = {
+		kind = "script",
+		t = 0,
+		duration = math.huge,
+		from = s.chassis.CFrame,
+		to = s.chassis.CFrame,
+		swapped = false,
+		script = script,
+		onFinish = onFinish,
+	}
+	return s.sequence
+end
+
+function VehicleController.isScriptActive(handle: any): boolean
+	return state ~= nil and handle ~= nil and state.sequence == handle
+end
+
+-- Hit-stop: hold the wheel and effect animation for a moment
+function VehicleController.freezeRender(duration: number)
+	renderFrozenUntil = math.max(renderFrozenUntil, os.clock() + duration)
 end
 
 -- RESET: back to the last checkpoint, upright, in 0.5 s (always available)
@@ -835,7 +960,7 @@ function VehicleController.respawnDriver()
 end
 
 -- Dev tests: put the car somewhere at a given velocity, now.
-function VehicleController.placeAt(cf: CFrame, velocity: Vector3?)
+function VehicleController.placeAt(cf: CFrame, velocity: Vector3?, angular: Vector3?)
 	local s = state
 	if not s then
 		return
@@ -843,7 +968,7 @@ function VehicleController.placeAt(cf: CFrame, velocity: Vector3?)
 	s.sequence = nil
 	s.model:PivotTo(cf)
 	s.chassis.AssemblyLinearVelocity = velocity or Vector3.zero
-	s.chassis.AssemblyAngularVelocity = Vector3.zero
+	s.chassis.AssemblyAngularVelocity = angular or Vector3.zero
 	s.lastVelocity = velocity or Vector3.zero
 	s.skipImpactFrames = 3
 	s.airTime = 0

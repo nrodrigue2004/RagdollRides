@@ -252,7 +252,8 @@ end
 -- Local rider: eject, flail, respawn
 ---------------------------------------------------------------------------
 
-function RagdollClient.eject(vehicleVelocity: Vector3)
+-- extraUp adds an upward kick (an explosion throws the rider clear upward, unharmed)
+function RagdollClient.eject(vehicleVelocity: Vector3, extraUp: number?)
 	local rider = localRider
 	if not rider or rider.state ~= "seated" then
 		return
@@ -281,7 +282,7 @@ function RagdollClient.eject(vehicleVelocity: Vector3)
 
 	setPhysical(rider, true)
 	local velocity = vehicleVelocity * Config.Rider.ejectVelocityFactor
-		+ Vector3.new(0, Config.Rider.ejectUpSpeed, 0)
+		+ Vector3.new(0, Config.Rider.ejectUpSpeed + (extraUp or 0), 0)
 	for _, part in rider.parts do
 		part.AssemblyLinearVelocity = velocity
 		part.AssemblyAngularVelocity = random:NextUnitVector() * random:NextNumber(2, 6)
@@ -392,6 +393,18 @@ end
 -- Frame update
 ---------------------------------------------------------------------------
 
+-- The crash replay pauses the rider's timers and flailing while it plays the crash back
+local frozen = false
+
+function RagdollClient.setFrozen(value: boolean)
+	frozen = value
+end
+
+-- The local rider's 6 parts (for the crash replay's recording), or nil
+function RagdollClient.getLocalParts(): { [string]: BasePart }?
+	return if localRider then localRider.parts else nil
+end
+
 local function render(dt: number)
 	for _, rider in riders do
 		if rider.chassis.Parent == nil or rider.seat.Parent == nil then
@@ -405,7 +418,7 @@ local function render(dt: number)
 					steer = vehicleState.steerAngle / math.rad(Config.Driving.maxSteerAtZero)
 				end
 				placeSeated(rider, steer)
-			else
+			elseif not frozen then
 				rider.ragdollTime += dt
 				if controllers.Input.consume("flail") then
 					flail(rider)

@@ -29,10 +29,13 @@ require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild
 local ORDER = {
 	{ "Input", "InputController" },
 	{ "SurfaceEffects", "SurfaceEffects" },
+	{ "Debris", "Debris" },
 	{ "Ragdoll", "RagdollClient" },
 	{ "Vehicle", "VehicleController" },
 	{ "RemoteVehicles", "RemoteVehicles" },
+	{ "Damage", "DamageController" },
 	{ "Camera", "CameraController" },
+	{ "CrashReplay", "CrashReplay" },
 	{ "Juice", "JuiceService" },
 	{ "Hud", "HudController" },
 	{ "Dev", "DevPanel" },

@@ -8,4 +8,13 @@
 - 2026-11-15: Players have no avatar (CharacterAutoLoads off). The rider is a client-built 6-piece rig; others see it through the Vehicle.Pose stream (10 Hz, 7 or 127 bytes).
 - 2026-11-15: Ram test thresholds use closing speed × mass factor; static walls count as mass factor 2.0. Test speeds 6, 15 and 35 studs/s give Bump, HardHit and HugeCrash.
 - 2026-11-15: Milestone 1 lets every vehicle be tried on the test track; ownership checks come with saves (milestone 2).
-- 2026-11-15: Phone vibration uses HapticService where supported; unverified until tested on a phone.
+- 2026-11-15: Vibration works on gamepads only for now; phone vibration waits until the haptics API is checked on a real phone (verify).
+- 2026-11-15 (1b): Damage spill goes front/rear to left+right, left/right to front+rear, roof to left+right (25% each). Wheel share is split between the two wheels on that end or side by where the hit landed.
+- 2026-11-15 (1b): Landing wheel damage = max(0, fall speed - 50) x 1.2 to each wheel that touched down. Using the full impact formula would pop all four wheels off a 20-stud drop (fall speed 69 at gravity 120).
+- 2026-11-15 (1b): Every look, detach and glass break is derived from the 9 zone numbers, so every device draws the same wreck from Damage.State. Glass cracks when its zone turns dented (same as the spec's "hit over I 30" for single hits).
+- 2026-11-15 (1b): In looks-only modes (quick races) the engine keeps running at 0 front health, so damage never changes handling; it only smokes.
+- 2026-11-15 (1b): Explosion shockwaves are applied by each owner to their own car when they see another car's exploded flag (the owner always moves its own car). Brawl's server-applied version comes in milestone 7.
+- 2026-11-15 (1b): The crash replay never moves the real car (its position replicates to everyone). The real car is held still and hidden locally while a local copy plays back. It starts 0.3 s after the crash so the rider's flight is in it, and runs only when the rider was thrown. Other players' cars keep moving live during it.
+- 2026-11-15 (1b): Mesh deformation uses the body shell part (Body_Shell, or Panel_Floor on the blockouts). Device memory cannot be read from a game script, so the benchmark uses fps plus the player's own manual graphics quality (under 4 = off).
+- 2026-11-15 (1b): Damage.State server limit is 5 per s, burst 6 (clients send at most 4) so explosion and repair sends never count toward the kick limit. Owners resend every 3 s while damaged, which also covers late joiners.
+- 2026-11-15 (1b): The HUD shows the damage silhouette on the test track too (the spec puts it in Brawl and Highway), so it can be checked now.

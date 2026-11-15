@@ -10,6 +10,8 @@ globals:
   shared: { any: true }
   Enum: { any: true }
   Instance: { any: true }
+  Content: { any: true }
+  UserSettings: { any: true }
   Vector2: { any: true }
   Vector3: { any: true }
   CFrame: { any: true }

@@ -19,9 +19,9 @@ Read this first. Keep it short. Quality comes first; efficiency never means lowe
 - `notes/Working Agreement.md`: how nate wants the work done.
 
 ## Code map
-- `src/shared` (ReplicatedStorage.Shared): `Config` (every tuning number, pure data), `Net` + `NetSchema` + `Remotes` (all remotes, schema checks, rate limits), pure maths (`VehicleMath`, `Damage`, `PoseCodec`), `VehicleBuilder`, `Util/`.
+- `src/shared` (ReplicatedStorage.Shared): `Config` (every tuning number, pure data), `Net` + `NetSchema` + `Remotes` (all remotes, schema checks, rate limits), pure maths (`VehicleMath`, `Damage`, `DamageModel`, `PoseCodec`), `VehicleBuilder`, `Util/`.
 - `src/server` (ServerScriptService.Server): `Services/` (VehicleService, TestTrack, CollisionGroups).
-- `src/client` (StarterPlayerScripts.Client): `Controllers/` (VehicleController, RagdollClient, CameraController, InputController, HudController, JuiceService, SurfaceEffects, RemoteVehicles, DevPanel).
+- `src/client` (StarterPlayerScripts.Client): `Controllers/` (VehicleController, RagdollClient, CameraController, InputController, HudController, JuiceService, SurfaceEffects, RemoteVehicles, Debris, DamageController, CrashReplay, DevPanel) and `Fx/` (DamageVisuals, ExplosionFx, MeshDents).
 - Pure modules have no Roblox types so `tests/run.luau` can run them in Lune.
 
 ## Quality

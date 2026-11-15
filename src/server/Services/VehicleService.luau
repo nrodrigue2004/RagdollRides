@@ -17,6 +17,8 @@ local VehicleService = {}
 local vehiclesFolder: Folder
 local vehicles: { [Player]: Model } = {}
 local slots: { [Player]: number } = {}
+-- Last Damage.State per player (10 bytes). Later modes read it (Brawl KOs, Highway wrecks).
+local damageStates: { [Player]: buffer } = {}
 
 local function freeSlot(): number
 	local used = {}
@@ -43,12 +45,17 @@ function VehicleService.getVehicle(player: Player): Model?
 	return vehicles[player]
 end
 
+function VehicleService.getDamageState(player: Player): buffer?
+	return damageStates[player]
+end
+
 function VehicleService.spawn(player: Player, vehicleId: string, at: CFrame?)
 	local old = vehicles[player]
 	if old then
 		vehicles[player] = nil
 		old:Destroy()
 	end
+	damageStates[player] = nil -- a new car is a clean car
 
 	local slot = slots[player]
 	if not slot then
@@ -83,6 +90,7 @@ local function onPlayerRemoving(player: Player)
 	local model = vehicles[player]
 	vehicles[player] = nil
 	slots[player] = nil
+	damageStates[player] = nil
 	if model then
 		model:Destroy()
 	end
@@ -111,6 +119,16 @@ function VehicleService.init()
 			return
 		end
 		Net.fireAllExcept("Vehicle.Pose", player, player.UserId, pose)
+	end)
+
+	-- Damage: the owner's device computes it; the server keeps the latest and relays it to everyone else.
+	-- (Owners resend every 3 s while damaged, which also covers players who join or stream in later.)
+	Net.on("Damage.State", function(player: Player, state: buffer)
+		if vehicles[player] == nil then
+			return
+		end
+		damageStates[player] = state
+		Net.fireAllExcept("Damage.State", player, player.UserId, state)
 	end)
 
 	Players.PlayerAdded:Connect(onPlayerAdded)

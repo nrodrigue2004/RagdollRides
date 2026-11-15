@@ -1,7 +1,7 @@
 -- CollisionGroups: registered once on the server (groups replicate to clients).
 --   Vehicles  every chassis
 --   Rider     ragdolled riders (client-local parts). Riders never hit each other.
---   Debris    flying panels (milestone 1b). Debris never hits players' cars or riders.
+--   Debris    flying panels and wheels. Debris hits the world but never players' cars or riders.
 --   Ghost     other players' cars in Tracks free runs (milestone 2).
 
 local PhysicsService = game:GetService("PhysicsService")

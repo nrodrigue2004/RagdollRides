@@ -41,8 +41,10 @@ local Remotes: { [string]: RemoteDef } = {
 		dir = "C2S2C",
 		unreliable = true,
 		schema = { { t = "buffer", len = { 10 } } },
-		rate = 4,
-		burst = 4,
+		-- Clients send at most 4 per second; the server allows a little headroom for explosion and repair
+		-- sends so a legit burst never counts toward the kick limit.
+		rate = 5,
+		burst = 6,
 		since = "1b",
 	},
 	["Impact.Report"] = {

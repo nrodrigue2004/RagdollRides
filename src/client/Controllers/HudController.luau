@@ -28,6 +28,13 @@ local jumpButton: TextButton
 local flailCatcher: TextButton
 local fadeFrame: Frame
 local hintLabel: TextLabel
+local silhouette: Frame
+local zoneFrames: { Frame } = {}
+local fireIcon: TextLabel
+local wreckedLabel: TextLabel
+local replayFrame: Frame
+local onFire = false
+local wrecked = false
 local layout = { controlSize = 1.0, leftHanded = false }
 local heldInputs: { [InputObject]: string } = {}
 
@@ -270,6 +277,139 @@ local function buildHints()
 	end)
 end
 
+-- Damage silhouette: the car from above, each zone coloured by its look (spec: Brawl and Highway HUDs;
+-- shown on the test track too). Front at the top.
+local LOOK_COLORS = {
+	[0] = Color3.fromRGB(120, 220, 120),
+	[1] = Color3.fromRGB(255, 215, 80),
+	[2] = Color3.fromRGB(255, 130, 60),
+	[3] = Color3.fromRGB(70, 70, 80),
+}
+-- zone -> position and size as fractions of the silhouette (x, y, w, h)
+local ZONE_LAYOUT = {
+	{ 0.25, 0.04, 0.5, 0.2 }, -- front
+	{ 0.25, 0.76, 0.5, 0.2 }, -- rear
+	{ 0.08, 0.26, 0.15, 0.48 }, -- left
+	{ 0.77, 0.26, 0.15, 0.48 }, -- right
+	{ 0.27, 0.3, 0.46, 0.4 }, -- roof
+	{ 0.0, 0.08, 0.16, 0.16 }, -- FL
+	{ 0.84, 0.08, 0.16, 0.16 }, -- FR
+	{ 0.0, 0.76, 0.16, 0.16 }, -- RL
+	{ 0.84, 0.76, 0.16, 0.16 }, -- RR
+}
+
+local function buildDamage()
+	silhouette = Instance.new("Frame")
+	silhouette.Name = "DamageSilhouette"
+	silhouette.BackgroundTransparency = 1
+	silhouette.SizeConstraint = Enum.SizeConstraint.RelativeYY
+	silhouette.Size = UDim2.fromScale(0.08, 0.13)
+	silhouette.AnchorPoint = Vector2.new(0, 0)
+	silhouette.Position = UDim2.new(0, 16, 0, 96)
+	silhouette.Parent = gui
+	for index, rect in ZONE_LAYOUT do
+		local zone = Instance.new("Frame")
+		zone.Name = "Zone" .. index
+		zone.Position = UDim2.fromScale(rect[1], rect[2])
+		zone.Size = UDim2.fromScale(rect[3], rect[4])
+		zone.BackgroundColor3 = LOOK_COLORS[0]
+		zone.BorderSizePixel = 0
+		corner(zone, 0.3)
+		local s = Instance.new("UIStroke")
+		s.Thickness = 2
+		s.Color = Color3.fromRGB(35, 35, 45)
+		s.Parent = zone
+		zone.Parent = silhouette
+		zoneFrames[index] = zone
+	end
+
+	fireIcon = Instance.new("TextLabel")
+	fireIcon.Name = "FireWarning"
+	fireIcon.Text = "!"
+	fireIcon.Font = FONT
+	fireIcon.TextScaled = true
+	fireIcon.TextColor3 = Color3.fromRGB(255, 255, 255)
+	fireIcon.BackgroundColor3 = Color3.fromRGB(255, 90, 40)
+	fireIcon.SizeConstraint = Enum.SizeConstraint.RelativeYY
+	fireIcon.Size = UDim2.fromScale(0.5, 0.5)
+	fireIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+	fireIcon.Position = UDim2.fromScale(1.6, 0.3) -- just right of the silhouette
+	fireIcon.Visible = false
+	fireIcon.ZIndex = 3
+	corner(fireIcon, 0.5)
+	stroke(fireIcon)
+	fireIcon.Parent = silhouette
+
+	wreckedLabel = Instance.new("TextLabel")
+	wreckedLabel.Name = "Wrecked"
+	wreckedLabel.Text = "WRECKED"
+	wreckedLabel.Font = FONT
+	wreckedLabel.TextScaled = true
+	wreckedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	wreckedLabel.BackgroundTransparency = 1
+	wreckedLabel.SizeConstraint = Enum.SizeConstraint.RelativeYY
+	wreckedLabel.Size = UDim2.fromScale(0.6, 0.1)
+	wreckedLabel.AnchorPoint = Vector2.new(0.5, 0)
+	wreckedLabel.Position = UDim2.new(0.5, 0, 0, 24)
+	wreckedLabel.Visible = false
+	local ws = Instance.new("UIStroke")
+	ws.Thickness = 4
+	ws.Color = Color3.fromRGB(35, 35, 45)
+	ws.Parent = wreckedLabel
+	wreckedLabel.Parent = gui
+
+	-- Crash replay: letterbox bars and a REPLAY tag
+	replayFrame = Instance.new("Frame")
+	replayFrame.Name = "Replay"
+	replayFrame.BackgroundTransparency = 1
+	replayFrame.Size = UDim2.fromScale(1, 1)
+	replayFrame.Visible = false
+	replayFrame.ZIndex = 5
+	replayFrame.Parent = gui
+	for _, top in { true, false } do
+		local bar = Instance.new("Frame")
+		bar.BackgroundColor3 = Color3.new(0, 0, 0)
+		bar.BorderSizePixel = 0
+		bar.Size = UDim2.fromScale(1, 0.09)
+		bar.AnchorPoint = Vector2.new(0, if top then 0 else 1)
+		bar.Position = UDim2.fromScale(0, if top then 0 else 1)
+		bar.ZIndex = 5
+		bar.Parent = replayFrame
+	end
+	local tag = Instance.new("TextLabel")
+	tag.Text = "REPLAY"
+	tag.Font = FONT
+	tag.TextScaled = true
+	tag.TextColor3 = Color3.fromRGB(255, 220, 80)
+	tag.BackgroundTransparency = 1
+	tag.Size = UDim2.fromScale(0.3, 0.06)
+	tag.AnchorPoint = Vector2.new(0.5, 0.5)
+	tag.Position = UDim2.fromScale(0.5, 0.045)
+	tag.ZIndex = 6
+	tag.Parent = replayFrame
+end
+
+local function showDamage(fractions: { number }, flags: number)
+	local cfg = Config.Damage
+	for index, zone in zoneFrames do
+		local fraction = fractions[index] or 1
+		local look = if fraction <= 0
+			then 3
+			elseif fraction < cfg.crushedBelow then 2
+			elseif fraction < cfg.dentedBelow then 1
+			else 0
+		zone.BackgroundColor3 = LOOK_COLORS[look]
+		zone.BackgroundTransparency = if look == 3 and index >= 6 then 0.7 else 0
+	end
+	onFire = bit32.band(flags, 1) ~= 0
+end
+
+function HudController.setReplay(on: boolean)
+	if replayFrame then
+		replayFrame.Visible = on
+	end
+end
+
 local function buildFade()
 	fadeFrame = Instance.new("Frame")
 	fadeFrame.Name = "Fade"
@@ -330,6 +470,22 @@ local function update(dt: number)
 	flailCatcher.Visible = ragdolled
 	touchFrame.Visible = UserInputService.TouchEnabled and not ragdolled
 	resetButton.Visible = not ragdolled
+
+	-- Fire warning pulse beside the damage silhouette; WRECKED pulses RESET
+	local t = os.clock()
+	fireIcon.Visible = onFire
+	if onFire then
+		local pulse = 0.5 * (1 + 0.15 * math.sin(t * 12))
+		fireIcon.Size = UDim2.fromScale(pulse, pulse)
+	end
+	local showWrecked = wrecked and not ragdolled
+	wreckedLabel.Visible = showWrecked
+	if showWrecked then
+		local pulse = 0.11 * (1 + 0.1 * math.sin(t * 8)) * layout.controlSize
+		resetButton.Size = UDim2.fromScale(pulse, pulse)
+	else
+		resetButton.Size = UDim2.fromScale(0.11 * layout.controlSize, 0.11 * layout.controlSize)
+	end
 end
 
 function HudController.init(all)
@@ -348,7 +504,15 @@ function HudController.start()
 	buildTouchControls()
 	buildPrompts()
 	buildHints()
+	buildDamage()
 	buildFade()
+
+	if controllers.Damage then
+		controllers.Damage.Changed:Connect(showDamage)
+		controllers.Damage.Wrecked:Connect(function(value: boolean)
+			wrecked = value
+		end)
+	end
 
 	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(relayout)
 	-- A finger that slides off a held button still releases it

@@ -1,7 +1,8 @@
 -- JuiceService: one event bus for feedback (spec: Audio, VFX and juice). Every event name maps to a row in
 -- Config.Juice (shake, punch, vibration, sparks) and Config.Sounds (sound id), so the juice pass is a data
--- table, not scattered code. Milestone 1 wires driving and crash basics; hit-stop, slow-mo replay, debris
--- and explosions arrive with damage in milestone 1b.
+-- table, not scattered code. Driving and crash events are wired here; damage events (PanelTear,
+-- GlassShatter, FireStart, Explosion, Repair) are fired by DamageController and DamageVisuals, and hit-stop
+-- and the slow-mo replay live in CrashReplay.
 
 local HapticService = game:GetService("HapticService")
 local SoundService = game:GetService("SoundService")

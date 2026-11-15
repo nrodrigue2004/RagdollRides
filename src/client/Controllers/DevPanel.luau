@@ -4,7 +4,13 @@
 --   Drift  a full-lock turn at 60 studs/s drifts but recovers without input within 1 s
 --   Drop   a 20-stud drop lands and settles in under 0.3 s with no second bounce over 0.3 studs
 --   Ram    impact tiers trigger at 10 / 25 / 60 (driving into the crash wall at 6, 15 and 35 studs/s)
--- Also: class picker, eject now, FPS and memory readout. Results also go to the Output window.
+-- Milestone 1b damage tests (spec: QA > Driving and damage):
+--   Crash 60   a 60 mph head-on crash shows dents, torn panels and an explosion at 30+ fps; debris never
+--              passes 12 pieces and is gone by 3.0 s
+--   Zones      steps each of the 9 zones through clean, dented, crushed and 0 (watch the car)
+--   Race looks in looks-only mode (quick race), damage never changes handling
+-- Also: class picker, eject, explode, repair, the Dents setting, FPS and memory readout. Every test starts
+-- from a repaired car. Results also go to the Output window.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -255,6 +261,160 @@ local function ramTest()
 	end
 end
 
+local function crashTest()
+	local speed = 60 / Config.World.mphPerStudPerSecond -- 60 mph in studs/s
+	local start = CFrame.lookAt(
+		Vector3.new(0, 0, Config.TestTrack.crashWallZ + 60),
+		Vector3.new(0, 0, Config.TestTrack.crashWallZ - 100)
+	)
+	local Damage = controllers.Damage
+	local Debris = controllers.Debris
+	controllers.Input.setOverride(input(1, 0, 0))
+	controllers.Vehicle.placeAt(
+		start + Vector3.new(0, controllers.Vehicle.rideHeight() + 0.2, 0),
+		start.LookVector * speed
+	)
+	local hit = nil
+	local exploded = false
+	local connections = {
+		controllers.Vehicle.Impact:Connect(function(info)
+			if hit == nil and info.side == "Front" then
+				hit = info
+			end
+		end),
+		Damage.Exploded:Connect(function()
+			exploded = true
+		end),
+	}
+	-- Hold 60 mph until the wall, then watch for 4.5 s: fire, explosion, debris and the frame rate
+	local t0 = os.clock()
+	while hit == nil and os.clock() - t0 < 4 do
+		local s = vehicle()
+		if s then
+			s.chassis.AssemblyLinearVelocity = start.LookVector * speed
+				+ Vector3.new(0, s.chassis.AssemblyLinearVelocity.Y, 0)
+		end
+		RunService.PostSimulation:Wait()
+	end
+	controllers.Input.setOverride(input(0, 0, 0))
+	local minFps, maxDebris = math.huge, 0
+	local frames, window = 0, 0
+	local crashTime = os.clock()
+	local explodedAt = nil
+	local looks = nil
+	while os.clock() - crashTime < 4.5 do
+		local dt = RunService.RenderStepped:Wait()
+		frames += 1
+		window += dt
+		if window >= 0.5 then
+			minFps = math.min(minFps, frames / window)
+			frames, window = 0, 0
+		end
+		maxDebris = math.max(maxDebris, Debris.count())
+		if exploded and not explodedAt then
+			explodedAt = os.clock()
+		end
+		if os.clock() - crashTime < 0.5 then
+			looks = Damage.getLooks()
+		end
+	end
+	for _, connection in connections do
+		connection:Disconnect()
+	end
+	if not hit then
+		log("Crash 60: never reached the wall FAIL")
+		return
+	end
+	local dented = looks ~= nil and looks[1] >= 2
+	log(
+		string.format(
+			"Crash 60: Impact %.0f, front look %s, debris max %d (<= 12 %s)",
+			hit.impact,
+			if looks then tostring(looks[1]) else "?",
+			maxDebris,
+			verdict(maxDebris <= Config.Damage.debris.max)
+		)
+	)
+	log(
+		string.format(
+			"  dents and torn panels %s, explosion %s, min fps %.0f (30+ %s)",
+			verdict(dented),
+			if explodedAt then string.format("at %.1f s PASS", explodedAt - crashTime) else "none FAIL",
+			minFps,
+			verdict(minFps >= 30)
+		)
+	)
+	-- Debris must be gone 3.0 s after the last piece flew
+	local cleared = waitUntil(function()
+		return Debris.count() == 0
+	end, Config.Damage.debris.lifetime + 0.3)
+	log("  debris gone by 3.0 s " .. verdict(cleared))
+end
+
+local function zonesTest()
+	local Damage = controllers.Damage
+	local names = { "Front", "Rear", "Left", "Right", "Roof", "FL", "FR", "RL", "RR" }
+	local all = true
+	-- Park somewhere open so nothing else hits the car
+	placeAndSettle(spot(Config.TestTrack.openGround), 0.6)
+	for zone = 1, 9 do
+		local state = Damage.getState()
+		if not state then
+			return
+		end
+		local max = state.max[zone]
+		local seen = {}
+		-- 40% steps: dented, crushed, then 0
+		for _, target in { 0.5, 0.2, 0 } do
+			local current = Damage.getState().hp[zone]
+			Damage.damageZone(zone, current - target * max)
+			task.wait(0.5)
+			table.insert(seen, tostring(Damage.getLooks()[zone]))
+		end
+		local ok = table.concat(seen, ",") == "1,2,3"
+		all = all and ok
+		log(string.format("Zone %s: looks %s %s", names[zone], table.concat(seen, " "), verdict(ok)))
+		if zone == 1 then
+			-- the front at 0 sets the car on fire; repair before it blows so the other zones are visible
+			task.wait(0.5)
+		end
+		Damage.repair()
+		task.wait(0.3)
+	end
+	log("Zones: clean -> dented -> crushed -> 0 for all 9 " .. verdict(all))
+end
+
+local function raceLooksTest()
+	local Damage = controllers.Damage
+	local previous = workspace:GetAttribute("Mode")
+	-- Local only: the server never sees this, it just switches this device's damage rules
+	workspace:SetAttribute("Mode", "TracksRace")
+	task.wait(0.1)
+	Damage.damageZone(1, 1000)
+	Damage.damageZone(7, 50)
+	Damage.damageZone(8, 1000)
+	task.wait(3.5)
+	local s = vehicle()
+	local h = s and s.handling
+	local clean = h ~= nil
+		and h.topSpeed == 1
+		and h.drive == 1
+		and not h.engineDead
+		and h.steerPull == 0
+		and not h.lost[3]
+	local state = Damage.getState()
+	local noBoom = state ~= nil and not state.exploded
+	log(
+		string.format(
+			"Race looks-only: handling unchanged %s, no explosion %s",
+			verdict(clean),
+			verdict(noBoom)
+		)
+	)
+	workspace:SetAttribute("Mode", previous)
+	Damage.repair()
+end
+
 local function run(name: string, fn: () -> ())
 	if busy then
 		log("Busy: wait for the current test to finish")
@@ -267,6 +427,9 @@ local function run(name: string, fn: () -> ())
 	if controllers.Ragdoll.isRagdolled() then
 		controllers.Ragdoll.respawn()
 		task.wait(0.8)
+	end
+	if controllers.Damage then
+		controllers.Damage.repair() -- every test starts from a clean car
 	end
 	busy = true
 	task.spawn(function()
@@ -318,7 +481,7 @@ local function build()
 	panel = Instance.new("Frame")
 	panel.Name = "Panel"
 	panel.Position = UDim2.fromOffset(12, 56)
-	panel.Size = UDim2.fromOffset(470, 520)
+	panel.Size = UDim2.fromOffset(470, 600)
 	panel.BackgroundColor3 = Color3.fromRGB(25, 25, 32)
 	panel.BackgroundTransparency = 0.15
 	panel.Visible = false
@@ -363,7 +526,7 @@ local function build()
 	local tests = Instance.new("Frame")
 	tests.BackgroundTransparency = 1
 	tests.Position = UDim2.fromOffset(0, 70)
-	tests.Size = UDim2.new(1, 0, 0, 74)
+	tests.Size = UDim2.new(1, 0, 0, 154)
 	tests.Parent = panel
 	local grid = Instance.new("UIGridLayout")
 	grid.CellSize = UDim2.fromOffset(104, 34)
@@ -400,11 +563,39 @@ local function build()
 		table.clear(logLines)
 		logLabel.Text = ""
 	end)
+	button(tests, "Crash 60", 9, function()
+		run("Crash 60", crashTest)
+	end)
+	button(tests, "Zones", 10, function()
+		run("Zones", zonesTest)
+	end)
+	button(tests, "Race looks", 11, function()
+		run("Race looks", raceLooksTest)
+	end)
+	button(tests, "Explode", 12, function()
+		controllers.Damage.damageZone(1, 10000)
+		log("Front zone at 0: fire for 3 s, then the explosion")
+	end)
+	button(tests, "Repair", 13, function()
+		controllers.Damage.repair()
+	end)
+	local dents = button(tests, "Dents: Full", 14, function() end)
+	dents.Activated:Connect(function()
+		local Fx = controllers.Damage
+		local nextValue = if dents.Text == "Dents: Full" then "PanelsOnly" else "Full"
+		Fx.setDents(nextValue)
+		dents.Text = "Dents: " .. (if nextValue == "Full" then "Full" else "Panels")
+		log("Dents " .. nextValue .. " (" .. Fx.dentStatus() .. ")")
+	end)
+	button(tests, "Force dents", 15, function()
+		controllers.Damage.forceDents()
+		log("Dents forced on (" .. controllers.Damage.dentStatus() .. ")")
+	end)
 
 	logLabel = Instance.new("TextLabel")
 	logLabel.BackgroundTransparency = 1
-	logLabel.Position = UDim2.fromOffset(0, 152)
-	logLabel.Size = UDim2.new(1, 0, 1, -160)
+	logLabel.Position = UDim2.fromOffset(0, 232)
+	logLabel.Size = UDim2.new(1, 0, 1, -240)
 	logLabel.Font = Enum.Font.Code
 	logLabel.TextSize = 14
 	logLabel.TextWrapped = true

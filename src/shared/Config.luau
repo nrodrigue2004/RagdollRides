@@ -8,7 +8,7 @@
 
 local Config = {}
 
-Config.Version = "0.1.0-m1"
+Config.Version = "0.2.0-m1b"
 
 ---------------------------------------------------------------------------
 -- World
@@ -334,6 +334,81 @@ Config.Impact = {
 }
 
 ---------------------------------------------------------------------------
+-- Damage (spec: Damage zones, Damage by mode, Explosions, Mesh deformation, Repairs). Every number (tune).
+---------------------------------------------------------------------------
+Config.Damage = {
+	bodyHealth = 100, -- front, rear, left, right, roof; times the class zoneHealthMultiplier and the mode's
+	wheelHealth = 60,
+	impactOffset = 15, -- damage to the hit zone = max(0, I - 15) x 1.2
+	impactScale = 1.2,
+	spillFraction = 0.25, -- to each adjacent zone
+	wheelShare = 0.5, -- wheels take 50% of front or side damage on that corner
+	landingWheelSpeed = 50, -- landings above this fall speed damage the wheels that touched down
+	-- Look thresholds as a fraction of zone health: clean 67-100%, dented 34-66%, crushed 1-33%, 0 destroyed
+	dentedBelow = 0.67,
+	crushedBelow = 0.34,
+	handling = {
+		frontDentedTopSpeed = 0.95,
+		frontCrushedTopSpeed = 0.85,
+		wheelDentedPull = 2, -- degrees toward the damaged wheel
+		wheelCrushedPull = 5,
+		maxPull = 8,
+		wheelCrushedGrip = 0.8,
+		wheelLostDrive = 0.25, -- drive force lost per missing wheel
+		axleDragG = 0.6, -- friction of a dragging axle, in g of that corner's weight
+	},
+	fireTime = 3.0, -- front at 0: flames for 3 s, then the explosion
+	wreckWheels = 3,
+	shockwave = { radius = 18, push = 45, up = 20, damage = 30 },
+	explosionPanels = { 4, 6 },
+	ownExplosionHop = 18, -- the exploding car jumps a little (studs/s up)
+	riderBlastUp = 45, -- rider thrown clear upward, unharmed
+	maxFullExplosions = 2, -- per client at once; extras are a small pop with a smoke puff
+	sendMaxRate = 4, -- Damage.State sends per second at most
+	resendInterval = 3, -- while damaged, resend the state so a lost packet never sticks
+	debris = { max = 12, fadeAt = 2.5, lifetime = 3.0, spin = 8, speed = 22, up = 18 },
+	-- Damage by mode: looks, handling, explosions, health multiplier
+	modes = {
+		TestTrack = { looks = true, handling = true, explosion = true, health = 1.0 },
+		Tracks = { looks = true, handling = true, explosion = true, health = 1.0 },
+		TracksRace = { looks = true, handling = false, explosion = false, health = 1.0 },
+		TracksFullDamage = { looks = true, handling = true, explosion = true, health = 1.0 },
+		Brawl = { looks = true, handling = true, explosion = true, health = 1.5 },
+		Highway = { looks = true, handling = true, explosion = true, health = 3.0 },
+	},
+	-- Mesh deformation on the body shell (EditableMesh, verify limits)
+	deform = {
+		maxCars = 4,
+		range = 60,
+		maxVertices = 1500,
+		vertexSpacing = 1.0,
+		radiusBase = 1.5, -- r = 1.5 + I / 40
+		radiusPerImpact = 1 / 40,
+		pushPerImpact = 1 / 100, -- push = min(0.8, I / 100)
+		maxPush = 0.8,
+		maxTotal = 1.2,
+		benchmarkTime = 5,
+		benchmarkMinFps = 45,
+		minQualityLevel = 4, -- if the player set graphics quality by hand below this, dents start off
+	},
+}
+
+-- Hit-stop and the slow-mo crash replay (spec: Impact). Physics never slows: the replay is a playback.
+Config.CrashFx = {
+	hitStopMin = 0.04, -- hard hit: 40 to 80 ms scaled by Impact
+	hitStopMax = 0.08,
+	hitStopHuge = 0.08,
+	replayBuffer = 3.0,
+	replayRate = 30,
+	replayWindow = 0.6, -- the last 0.6 s plays at half speed for 1.2 s
+	replaySpeed = 0.5,
+	replayDelay = 0.3, -- wait this long after the crash so the replay shows the aftermath too
+	replayModes = { TestTrack = true, Tracks = true, Highway = true },
+	crashCamDistance = 16,
+	crashCamHeight = 6,
+}
+
+---------------------------------------------------------------------------
 -- Rider (spec: Rider ragdoll and bone breaks)
 ---------------------------------------------------------------------------
 Config.Rider = {
@@ -409,6 +484,12 @@ Config.Sounds = {
 	Checkpoint = "",
 	TireSqueal = "",
 	SuspensionCreak = "",
+	PanelTear = "",
+	GlassShatter = "",
+	FireStart = "",
+	Explosion = "",
+	ExplosionSmall = "",
+	Repair = "",
 }
 
 Config.Juice = {
@@ -434,6 +515,13 @@ Config.Juice = {
 	RiderEject = { shake = 0.3, shakeTime = 0.1 },
 	Respawn = {},
 	Checkpoint = { vibration = 0.3, vibrationTime = 0.04 },
+	PanelTear = { sparks = 8 },
+	GlassShatter = {},
+	FireStart = { vibration = 0.3, vibrationTime = 0.06 },
+	-- Explosion shake is scaled by distance (1 at the blast, 0 at 60 studs)
+	Explosion = { shake = 1.2, shakeTime = 0.35, vibration = 1, vibrationTime = 0.15 },
+	ExplosionSmall = { shake = 0.3, shakeTime = 0.12 },
+	Repair = {},
 }
 
 ---------------------------------------------------------------------------

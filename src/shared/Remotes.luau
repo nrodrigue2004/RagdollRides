@@ -64,15 +64,23 @@ local Remotes: { [string]: RemoteDef } = {
 		burst = 2,
 		since = "2",
 	},
+	-- mapId, the driver's timer, trail coins picked up (the server clamps it to the map's count)
 	["Run.Finish"] = {
 		dir = "C2S",
-		schema = { { t = "string", max = 40 }, { t = "number" } },
+		schema = { { t = "string", max = 40 }, { t = "number" }, { t = "integer", min = 0, max = 200 } },
 		rate = 2,
 		burst = 2,
 		since = "2",
 	},
 	["Run.Result"] = { dir = "S2C", since = "2" },
-	["Settings.Save"] = { dir = "C2S", schema = { { t = "any" } }, rate = 0.2, burst = 1, since = "2" },
+	["Run.Ghost"] = { dir = "S2C", since = "2" }, -- mapId, base64 ghost or nil
+	["Map.Go"] = { dir = "C2S", schema = { { t = "string", max = 40 } }, rate = 0.5, burst = 2, since = "2" },
+	["Profile.Data"] = { dir = "S2C", since = "2" }, -- the client's view of its own profile, on every change
+	["Notice"] = { dir = "S2C", since = "2" }, -- a preset message key (our text only, never player text)
+	-- Settings: the client sends at most once per 5 s; the burst covers a save right before leaving
+	["Settings.Save"] = { dir = "C2S", schema = { { t = "any" } }, rate = 0.2, burst = 2, since = "2" },
+	-- Studio and admins only: start over as a first-time player (to test onboarding)
+	["Dev.ResetProfile"] = { dir = "C2S", schema = {}, rate = 0.2, burst = 1, since = "2" },
 
 	-- Milestone 3 and 4
 	["Map.Publish"] = {

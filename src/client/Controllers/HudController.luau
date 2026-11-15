@@ -3,7 +3,8 @@
 -- size setting (80% to 140%), with a left-handed (mirrored) layout. Touch controls: GAS, BRAKE, steer
 -- left/right, JUMP (vehicles with a hop), LEAN forward/back, RESET, FLIP when needed, RESPAWN while thrown.
 -- Keyboard and gamepad players see the same RESET / FLIP / RESPAWN prompts with their key.
--- The timer, ghost split and checkpoint count join this HUD in milestone 2.
+-- Milestone 2: the Tracks layer (timer, splits, top bar, results, cues) is TracksHud, built on this gui;
+-- onboarding cues pulse these controls through HudController.pulse.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -34,6 +35,7 @@ local fireIcon: TextLabel
 local wreckedLabel: TextLabel
 local replayFrame: Frame
 local onFire = false
+local damaged = false
 local wrecked = false
 local layout = { controlSize = 1.0, leftHanded = false }
 local heldInputs: { [InputObject]: string } = {}
@@ -83,6 +85,7 @@ local function makeButton(
 	button.AutoButtonColor = true
 	button.SizeConstraint = Enum.SizeConstraint.RelativeYY
 	button.Size = UDim2.fromScale(heightFraction * layout.controlSize, heightFraction * layout.controlSize)
+	button:SetAttribute("BaseFraction", heightFraction)
 	local minimum = Instance.new("UISizeConstraint")
 	minimum.MinSize = Vector2.new(Config.UI.minTapTarget, Config.UI.minTapTarget)
 	minimum.Parent = button
@@ -391,6 +394,7 @@ end
 
 local function showDamage(fractions: { number }, flags: number)
 	local cfg = Config.Damage
+	damaged = false
 	for index, zone in zoneFrames do
 		local fraction = fractions[index] or 1
 		local look = if fraction <= 0
@@ -399,6 +403,7 @@ local function showDamage(fractions: { number }, flags: number)
 			elseif fraction < cfg.dentedBelow then 1
 			else 0
 		zone.BackgroundColor3 = LOOK_COLORS[look]
+		damaged = damaged or look > 0
 		zone.BackgroundTransparency = if look == 3 and index >= 6 then 0.7 else 0
 	end
 	onFire = bit32.band(flags, 1) ~= 0
@@ -444,6 +449,41 @@ function HudController.setLayout(controlSize: number, leftHanded: boolean)
 end
 
 local pulseClock = 0
+local pulses: { [string]: number } = {} -- touch control name -> pulse until (os.clock)
+
+-- Make a touch control throb for a while (onboarding cues: GAS on spawn, JUMP before the ramp)
+function HudController.pulse(controlName: string, duration: number)
+	pulses[controlName] = os.clock() + duration
+end
+
+function HudController.stopPulse(controlName: string)
+	pulses[controlName] = nil
+end
+
+function HudController.getGui(): ScreenGui?
+	return gui
+end
+
+function HudController.getResetButton(): TextButton?
+	return resetButton
+end
+
+local function updatePulses(t: number)
+	for name, untilTime in pulses do
+		local button = touchFrame and touchFrame:FindFirstChild(name) :: TextButton?
+		if button == nil then
+			continue
+		end
+		local base = (button:GetAttribute("BaseFraction") or 0.2) * layout.controlSize
+		if t >= untilTime then
+			pulses[name] = nil
+			button.Size = UDim2.fromScale(base, base)
+		else
+			local scale = base * (1 + 0.14 * math.abs(math.sin(t * 6)))
+			button.Size = UDim2.fromScale(scale, scale)
+		end
+	end
+end
 
 local function update(dt: number)
 	local vehicle = controllers.Vehicle.getState()
@@ -478,6 +518,9 @@ local function update(dt: number)
 		local pulse = 0.5 * (1 + 0.15 * math.sin(t * 12))
 		fireIcon.Size = UDim2.fromScale(pulse, pulse)
 	end
+	updatePulses(t)
+	-- Tracks free runs show the damage silhouette only once the car is damaged (less clutter)
+	silhouette.Visible = workspace:GetAttribute("Mode") ~= "Tracks" or damaged
 	local showWrecked = wrecked and not ragdolled
 	wreckedLabel.Visible = showWrecked
 	if showWrecked then

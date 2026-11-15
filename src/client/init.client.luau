@@ -38,6 +38,9 @@ local ORDER = {
 	{ "CrashReplay", "CrashReplay" },
 	{ "Juice", "JuiceService" },
 	{ "Hud", "HudController" },
+	{ "Profile", "ProfileClient" },
+	{ "Settings", "SettingsMenu" },
+	{ "Tracks", "TracksClient" },
 	{ "Dev", "DevPanel" },
 }
 

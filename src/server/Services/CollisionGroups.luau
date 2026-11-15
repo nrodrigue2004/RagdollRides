@@ -2,7 +2,8 @@
 --   Vehicles  every chassis
 --   Rider     ragdolled riders (client-local parts). Riders never hit each other.
 --   Debris    flying panels and wheels. Debris hits the world but never players' cars or riders.
---   Ghost     other players' cars in Tracks free runs (milestone 2).
+--   Ghost     every chassis in Tracks free runs: cars pass through each other (milestone 2). Debris and
+--             riders never hit a Ghost car either (debris from your own car must not hit it).
 
 local PhysicsService = game:GetService("PhysicsService")
 
@@ -23,6 +24,7 @@ function CollisionGroups.init()
 	PhysicsService:CollisionGroupSetCollidable("Ghost", "Vehicles", false)
 	PhysicsService:CollisionGroupSetCollidable("Ghost", "Ghost", false)
 	PhysicsService:CollisionGroupSetCollidable("Ghost", "Rider", false)
+	PhysicsService:CollisionGroupSetCollidable("Ghost", "Debris", false)
 end
 
 return CollisionGroups

@@ -8,7 +8,7 @@
 
 local Config = {}
 
-Config.Version = "0.2.0-m1b"
+Config.Version = "0.3.0-m2"
 
 ---------------------------------------------------------------------------
 -- World
@@ -424,6 +424,7 @@ Config.Rider = {
 	ownCarNoCollideTime = 0.5,
 	poseRate = 10, -- Hz
 	interpolationDelay = 0.1,
+	hazardKickUp = 20, -- extra upward speed when a hazard (a spinner) throws the rider
 	-- Highway only: ejected rider auto-respawns into the moving car (used from milestone 8)
 	highwayAutoRespawn = 1.5,
 	colors = {
@@ -490,6 +491,10 @@ Config.Sounds = {
 	Explosion = "",
 	ExplosionSmall = "",
 	Repair = "",
+	Coin = "",
+	Finish = "",
+	Honk = "",
+	StarEarned = "",
 }
 
 Config.Juice = {
@@ -522,6 +527,100 @@ Config.Juice = {
 	Explosion = { shake = 1.2, shakeTime = 0.35, vibration = 1, vibrationTime = 0.15 },
 	ExplosionSmall = { shake = 0.3, shakeTime = 0.12 },
 	Repair = {},
+	Coin = {},
+	Finish = { shake = 0.2, shakeTime = 0.1, vibration = 0.5, vibrationTime = 0.08 },
+	Honk = {},
+	StarEarned = { vibration = 0.4, vibrationTime = 0.05 },
+}
+
+---------------------------------------------------------------------------
+-- Tracks (spec: Tracks: free run; Onboarding; Anti-exploit). Every reward number is (tune).
+---------------------------------------------------------------------------
+Config.Tracks = {
+	silverFactor = 1.5, -- Silver = under creator time x 1.5 (2 stars)
+	goldFactor = 1.1, -- Gold = under creator time x 1.1 (3 stars)
+	coinsStarter = 50,
+	coinsPlayerMap = 30,
+	fullPayFinishesPerDay = 3, -- per map per day, then
+	reducedCoins = 5,
+	dailyCap = 1200,
+	minTimeFactor = 0.6, -- a finish faster than creator time x 0.6 (floor 5 s) is rejected
+	minTimeFloor = 5,
+	speedCheckRate = 4, -- server position samples per second
+	speedLimitFactor = 1.4, -- max speed x 1.4 plus launch allowances
+	launchAllowance = 90, -- studs/s added for bouncers, speed pads and falls
+	speedFlagsToKick = 5,
+	rejectsForBoardBan = 3, -- 3 rejects in 10 minutes = no leaderboard posts for the day
+	ghostRate = 5, -- ghost samples per second
+	maxGhostSeconds = 180,
+	maxStoredGhosts = 20, -- most recent maps keep a ghost; starter maps always do
+	autoNextTime = 5,
+	resultsSkippableAfter = 2,
+	idleHonkTime = 6, -- Pip's Hill: idle this long and Pip honks and points
+	jumpCueLead = 1, -- JUMP pulses this long before the lip
+	firstTracksAssist = "High", -- steering assist forced for the first 2 tracks
+	trailCoinValue = 1, -- each trail coin is worth this at the finish, up to the map's coin count
+	clientTimeTolerance = 0.25, -- the driver's timer counts if it is within this of the server's clock
+	reportDistance = 80, -- a checkpoint or finish report counts only with the car this close (studs)
+	respawnAllowance = 25, -- a jump that lands this close to a respawn point is a reset, not speed
+	pipHillCoins = 100,
+	pipHillStars = 1,
+}
+
+-- The next-goal bar shows the cheapest goal not yet afforded (the shop arrives in milestone 5).
+Config.Goals = {
+	{ id = "starter_paint", label = "Starter paint", coins = 200 },
+	{ id = "pocket_sedan", label = "Pocket Sedan", coins = 1200 },
+	{ id = "fizz_wagon", label = "Fizz Wagon", coins = 3000 },
+	{ id = "haul_hog", label = "Haul Hog", coins = 5000, stars = 10 },
+	{ id = "bumble_bus", label = "Bumble Bus", coins = 9000, stars = 25 },
+}
+
+-- Economy (spec: Coin faucets and caps)
+Config.Economy = {
+	friendBoostPerFriend = 0.10,
+	friendBoostMax = 0.50,
+	rebirthBonusPer = 0.05,
+	rebirthBonusMax = 0.50,
+}
+
+-- Settings: defaults (same as the saved profile) and allowed values (spec: Settings screen)
+Config.Settings = {
+	defaults = {
+		controlSize = 1.0,
+		layout = "default",
+		steerAssist = "high",
+		shake = true,
+		reducedMotion = false,
+		reducedFlash = false,
+		dents = "full",
+		graphics = "auto",
+		music = 0.6,
+		sfx = 0.8,
+	},
+	choices = {
+		layout = { "default", "lefthanded" },
+		steerAssist = { "off", "low", "high" },
+		dents = { "full", "panels" },
+		graphics = { "auto", "low", "medium", "high" },
+	},
+	ranges = {
+		controlSize = { 0.8, 1.4 },
+		music = { 0, 1 },
+		sfx = { 0, 1 },
+	},
+	saveInterval = 5, -- Settings.Save at most once per 5 s
+}
+
+-- Saves (spec: Data model). 1 read on join, 1 write per 60 s and on leave.
+Config.Data = {
+	storeName = "Player_v1",
+	keyPrefix = "P_",
+	autosaveInterval = 60,
+	saveRetries = 3,
+	lockStealAfter = 1800, -- a lock older than 30 minutes is a crashed server's: take it over
+	lockWaitTries = 4, -- otherwise wait for the other server to let go (about 5 s apart)
+	lockWaitTime = 5,
 }
 
 ---------------------------------------------------------------------------

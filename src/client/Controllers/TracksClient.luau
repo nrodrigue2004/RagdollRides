@@ -1,0 +1,699 @@
+-- TracksClient: the Tracks free run on this device (spec: Tracks, Onboarding > Pip's Hill beat sheet).
+-- The server times and pays every run; this shows it and reports what the driver did:
+-- * Run: READY at the start, the timer starts when the car moves off (Run.Start), checkpoints in order
+--   (Run.Checkpoint with the split against your best), the finish (Run.Finish), then the results card
+--   and the next map. RETRY puts you back on the start line.
+-- * Coins: trail coins are picked up here (a distance check) with a rising-pitch ding; the count goes
+--   with Run.Finish and the server clamps it to the map's coins.
+-- * Hazards: spinners spin here (from the server's clock, so everyone sees the same angle) and a
+--   sweeping bar that reaches the car throws the rider. Pip's Hill respawns by itself after 1 s.
+-- * Ghosts: your best run on this map drives beside you at 60% opacity; other players' cars are ghosts
+--   too (60% opacity, no collisions).
+-- * Onboarding (first time on a map): DRIVE pulses GAS at the start, JUMP! before Pip's Hill's ramp,
+--   LEAN BACK! on Lean Ledge, Pip honks if you sit still for 6 s, steering assist is High on the first 2.
+
+local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Config = require(Shared.Config)
+local GhostCodec = require(Shared.GhostCodec)
+local MapSpace = require(Shared.MapSpace)
+local Net = require(Shared.Net)
+local StarterMaps = require(Shared.StarterMaps)
+local TracksMath = require(Shared.TracksMath)
+local VehicleBuilder = require(Shared.VehicleBuilder)
+
+local Client = script.Parent.Parent
+local Confetti = require(Client:WaitForChild("Fx"):WaitForChild("Confetti"))
+local TracksHud = require(Client:WaitForChild("Ui"):WaitForChild("TracksHud"))
+
+local LocalPlayer = Players.LocalPlayer
+
+local TracksClient = {}
+
+local COIN_RADIUS = 7
+local COIN_STREAK_GAP = 1.2 -- pickups closer together than this climb in pitch
+local GHOST_OPACITY = 0.6
+local RESULT_TIMEOUT = 4
+
+local controllers: any = nil
+local map: StarterMaps.MapDef? = nil
+local runState = "idle" -- "idle" (no map), "ready", "running", "finished"
+local startClock = 0
+local finishTime = 0
+local reached = 0
+local collected: { [number]: boolean } = {}
+local coinCount = 0
+local coinPoints: { Vector3 } = {}
+local lastCoinClock = 0
+local coinStreak = 0
+local cues: { { kind: string, cf: CFrame, size: Vector3, shown: boolean } } = {}
+local sweepers: { { cf: CFrame, size: Vector3, speed: number } } = {}
+local coinParts: { [BasePart]: CFrame } = {}
+local spinnerParts: { [BasePart]: CFrame } = {}
+local ghostRuns: { [string]: { samples: { GhostCodec.Sample }, rate: number } } = {}
+local ghostModel: Model? = nil
+local ghostVehicleId: string? = nil
+local ghostFolder: Folder
+local idleTime = 0
+local resultToken = 0
+
+local function firstTimeHere(): boolean
+	local view = controllers.Profile.get()
+	if map == nil or map.tut == nil or view == nil then
+		return false
+	end
+	return view.tut[map.tut] ~= true
+end
+
+local function device(): string
+	return controllers.Input.lastDevice()
+end
+
+local function cueText(kind: string): string
+	local d = device()
+	if kind == "drive" then
+		return if d == "touch"
+			then "HOLD GAS TO DRIVE!"
+			elseif d == "gamepad" then "HOLD RT TO DRIVE!"
+			else "HOLD W TO DRIVE!"
+	elseif kind == "jump" then
+		return if d == "touch" then "JUMP!" elseif d == "gamepad" then "Ⓐ JUMP!" else "SPACE: JUMP!"
+	elseif kind == "lean" then
+		return if d == "touch"
+			then "LEAN BACK!"
+			elseif d == "gamepad" then "STICK DOWN: LEAN BACK!"
+			else "Q: LEAN BACK!"
+	end
+	return ""
+end
+
+---------------------------------------------------------------------------
+-- Ghosts
+---------------------------------------------------------------------------
+
+local function hideGhost()
+	if ghostModel then
+		ghostModel.Parent = nil
+	end
+end
+
+local function makeGhost(vehicleId: string): Model
+	local model = VehicleBuilder.build(vehicleId, 0)
+	model.Name = "Ghost"
+	model:SetAttribute("OwnerUserId", nil)
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanTouch = false
+			d.CanQuery = false
+			d.CastShadow = false
+			if d.Transparency < 1 then
+				d.Transparency = 1 - GHOST_OPACITY * (1 - d.Transparency)
+			end
+		end
+	end
+	return model
+end
+
+local function showGhostAt(elapsed: number)
+	local current = map
+	local run = current and ghostRuns[current.id]
+	if current == nil or run == nil or #run.samples < 2 then
+		hideGhost()
+		return
+	end
+	local position = elapsed * run.rate + 1
+	local i0 = math.floor(position)
+	if i0 >= #run.samples then
+		hideGhost() -- the ghost has finished
+		return
+	end
+	local vehicleId = LocalPlayer:GetAttribute("VehicleId") or Config.DefaultVehicle
+	if ghostModel == nil or ghostVehicleId ~= vehicleId then
+		if ghostModel then
+			ghostModel:Destroy()
+		end
+		ghostModel = makeGhost(vehicleId)
+		ghostVehicleId = vehicleId
+	end
+	local a, b = run.samples[i0], run.samples[i0 + 1]
+	local o = current.offset
+	local cfA = CFrame.new(a.x + o[1], a.y + o[2], a.z + o[3], a.qx, a.qy, a.qz, a.qw)
+	local cfB = CFrame.new(b.x + o[1], b.y + o[2], b.z + o[3], b.qx, b.qy, b.qz, b.qw)
+	local model = ghostModel :: Model
+	model:PivotTo(cfA:Lerp(cfB, position - i0))
+	if model.Parent ~= ghostFolder then
+		model.Parent = ghostFolder
+	end
+end
+
+---------------------------------------------------------------------------
+-- Map setup and runs
+---------------------------------------------------------------------------
+
+local function isOnMap(part: Instance): boolean
+	return map ~= nil and part:GetAttribute("MapId") == map.id
+end
+
+local function setCoinVisible(part: BasePart, visible: boolean)
+	part.LocalTransparencyModifier = if visible then 0 else 1
+end
+
+local function refreshCoins()
+	for part in coinParts do
+		local index = part:GetAttribute("CoinIndex")
+		setCoinVisible(part, not (isOnMap(part) and collected[index :: number]))
+	end
+end
+
+local function hudRunLine()
+	local current = map
+	if current then
+		TracksHud.setCheckpoints(reached, current.checkpoints)
+	else
+		TracksHud.setCheckpoints(0, 0)
+	end
+end
+
+-- Back to READY on the start line (a new car, a new map, or RETRY)
+local function resetRun()
+	resultToken += 1
+	runState = if map then "ready" else "idle"
+	reached = 0
+	coinCount = 0
+	coinStreak = 0
+	table.clear(collected)
+	for _, cue in cues do
+		cue.shown = false
+	end
+	idleTime = 0
+	hideGhost()
+	refreshCoins()
+	TracksHud.setTimer(if map then 0 else nil)
+	hudRunLine()
+	if map and map.id == StarterMaps.FIRST_MAP and firstTimeHere() then
+		TracksHud.showCue(cueText("drive"), 30)
+		controllers.Hud.pulse("Gas", 30)
+	end
+end
+
+local function prepareMap(mapId: string?)
+	local current = if mapId then StarterMaps.byId[mapId] else nil
+	map = current
+	table.clear(coinPoints)
+	table.clear(cues)
+	table.clear(sweepers)
+	TracksHud.hideResults()
+	if current == nil then
+		controllers.Vehicle.setKillY(nil)
+		controllers.Ragdoll.setAutoRespawn(nil)
+		controllers.Settings.forceSteerAssist(nil)
+		resetRun()
+		return
+	end
+	for _, piece in current.pieces do
+		if piece.kind == "Coin" then
+			table.insert(coinPoints, MapSpace.point(current, piece.x, piece.y, piece.z))
+		elseif piece.kind == "JumpCue" or piece.kind == "LeanCue" then
+			table.insert(cues, {
+				kind = if piece.kind == "JumpCue" then "jump" else "lean",
+				cf = MapSpace.pieceCFrame(current, piece),
+				size = Vector3.new(piece.sx, piece.sy, piece.sz),
+				shown = false,
+			})
+		elseif piece.kind == "Spinner" and (piece.axis or "up") == "up" then
+			table.insert(sweepers, {
+				cf = MapSpace.pieceCFrame(current, piece),
+				size = Vector3.new(piece.sx, piece.sy, piece.sz),
+				speed = piece.speed or 90,
+			})
+		end
+	end
+	controllers.Vehicle.setKillY(current.offset[2] + StarterMaps.killY(current))
+	controllers.Ragdoll.setAutoRespawn(current.autoRespawn)
+	controllers.Settings.forceSteerAssist(
+		if current.assist and firstTimeHere() then Config.Tracks.firstTracksAssist else nil
+	)
+	resetRun()
+end
+
+local function elapsed(): number
+	return os.clock() - startClock
+end
+
+local function startRun()
+	local current = map
+	if current == nil then
+		return
+	end
+	runState = "running"
+	startClock = os.clock()
+	Net.send("Run.Start", current.id)
+	TracksHud.hideCue()
+	controllers.Hud.stopPulse("Gas")
+end
+
+local function friendlyReason(reason: string?): string
+	if reason == nil then
+		return "This run didn't count."
+	elseif reason == "speed check" then
+		return "Your car moved too fast for this run."
+	elseif string.find(reason, "checkpoint", 1, true) then
+		return "A checkpoint was missed."
+	elseif reason == "faster than the map allows" then
+		return "That time was too fast to be real."
+	elseif reason == "not at the finish" then
+		return "The finish line didn't see you."
+	end
+	return "This run didn't count."
+end
+
+-- RETRY: the car back to the start line (with the reset fade), a fresh run
+local function restart()
+	local current = map
+	if current == nil then
+		return
+	end
+	local start = MapSpace.startCFrame(current)
+	controllers.Vehicle.setCheckpoint(start, 0)
+	local vehicle = controllers.Vehicle.getState()
+	if controllers.Ragdoll.isRagdolled() then
+		controllers.Ragdoll.respawn()
+	elseif vehicle and vehicle.sequence ~= nil then
+		-- Something else holds the car (a replay, a flip): put it on the line now
+		controllers.Vehicle.placeAt(start + Vector3.new(0, controllers.Vehicle.rideHeight() + 0.3, 0))
+	else
+		controllers.Vehicle.reset()
+	end
+	resetRun()
+end
+
+local function goNext(nextMap: string)
+	Net.send("Map.Go", nextMap)
+end
+
+local function showResult(result: { [string]: any })
+	local current = map
+	if current == nil then
+		return
+	end
+	local title
+	if not result.ok then
+		title = "RUN NOT COUNTED"
+	elseif result.firstReward and current.tut == "pipHill" then
+		title = "PIP'S HILL DONE!"
+	elseif result.firstFinish then
+		title = "FIRST FINISH!"
+	elseif result.isBest then
+		title = "NEW BEST!"
+	else
+		title = "FINISH!"
+	end
+	local bestText: string? = nil
+	if result.ok and not result.firstFinish then
+		if result.isBest and result.previousBest then
+			bestText = "Was " .. TracksMath.formatTime(result.previousBest)
+		elseif result.best then
+			bestText = "Best " .. TracksMath.formatTime(result.best)
+		end
+	end
+	local nextMap = result.nextMap or StarterMaps.nextMap(current.id)
+	local nextDef = StarterMaps.byId[nextMap]
+	local view = controllers.Profile.get()
+	TracksHud.showResults({
+		ok = result.ok == true,
+		title = title,
+		mapName = current.name,
+		time = result.time,
+		bestText = bestText,
+		tier = result.tier or 0,
+		newStars = result.stars or 0,
+		coins = result.coins or 0,
+		capped = result.capped == true,
+		reason = if result.ok then nil else friendlyReason(result.reason),
+		nextName = if nextDef then nextDef.name else "",
+		goal = controllers.Profile.goal(),
+		walletCoins = result.walletCoins or (view and view.coins) or 0,
+		walletStars = result.walletStars or (view and view.stars) or 0,
+	}, {
+		onRetry = restart,
+		onNext = function()
+			goNext(nextMap)
+		end,
+		onStarPop = function(_, isNew)
+			if isNew then
+				controllers.Juice.fire("StarEarned")
+			end
+		end,
+	})
+end
+
+local function finishRun(finishPart: BasePart)
+	local current = map
+	if current == nil then
+		return
+	end
+	runState = "finished"
+	finishTime = elapsed()
+	TracksHud.setTimer(finishTime)
+	Net.send("Run.Finish", current.id, finishTime, coinCount)
+	controllers.Juice.fire("Finish")
+	Confetti.burst(finishPart.Position + Vector3.new(0, 4, 0))
+	hideGhost()
+	-- No answer (a dropped request): say so rather than leave the player waiting
+	resultToken += 1
+	local token = resultToken
+	task.delay(RESULT_TIMEOUT, function()
+		if resultToken == token and runState == "finished" and not TracksHud.resultsOpen() then
+			showResult({ ok = false, mapId = current.id, nextMap = StarterMaps.nextMap(current.id) })
+		end
+	end)
+end
+
+local function onCheckpoint(index: number, part: BasePart?)
+	local current = map
+	if current == nil or runState ~= "running" or part == nil or not isOnMap(part) then
+		return
+	end
+	if index ~= reached + 1 then
+		return
+	end
+	reached = index
+	local t = elapsed()
+	Net.send("Run.Checkpoint", current.id, index, t)
+	hudRunLine()
+	local best = controllers.Profile.track(current.id)
+	if best and best.splits and best.splits[index] then
+		TracksHud.showSplit(t * 1000 - best.splits[index])
+	end
+end
+
+local function onTouched(part: BasePart)
+	local current = map
+	if current == nil or runState ~= "running" or not isOnMap(part) then
+		return
+	end
+	if CollectionService:HasTag(part, "Finish") then
+		if reached >= current.checkpoints then
+			finishRun(part)
+		else
+			TracksHud.toast("Go through every checkpoint first!")
+		end
+	end
+end
+
+local function collectCoin(index: number)
+	collected[index] = true
+	coinCount += 1
+	local now = os.clock()
+	coinStreak = if now - lastCoinClock <= COIN_STREAK_GAP then coinStreak + 1 else 0
+	lastCoinClock = now
+	controllers.Juice.fire("Coin", { pitch = 1 + math.min(coinStreak, 12) * 0.06, volume = 0.5 })
+	for part in coinParts do
+		if isOnMap(part) and part:GetAttribute("CoinIndex") == index then
+			setCoinVisible(part, false)
+		end
+	end
+end
+
+local function inBox(cf: CFrame, size: Vector3, point: Vector3, grow: Vector3): boolean
+	local p = cf:PointToObjectSpace(point)
+	return math.abs(p.X) <= size.X / 2 + grow.X
+		and math.abs(p.Y) <= size.Y / 2 + grow.Y
+		and math.abs(p.Z) <= size.Z / 2 + grow.Z
+end
+
+local function spinAngle(speed: number): number
+	return math.rad(speed) * workspace:GetServerTimeNow() % (2 * math.pi)
+end
+
+local function update(dt: number)
+	TracksHud.update(dt)
+	local t = os.clock()
+
+	-- Spin coins and spinners near the camera (all clients, any state)
+	local camera = workspace.CurrentCamera
+	local eye = camera and camera.CFrame.Position or Vector3.zero
+	for part, base in coinParts do
+		if part.LocalTransparencyModifier < 1 and (part.Position - eye).Magnitude < 400 then
+			part.CFrame = CFrame.new(base.Position) * CFrame.Angles(0, t * 3, 0) * base.Rotation
+		end
+	end
+	for part, base in spinnerParts do
+		if (base.Position - eye).Magnitude < 600 then
+			local angle = spinAngle(part:GetAttribute("Speed") or 90)
+			if part:GetAttribute("Axis") == "across" then
+				part.CFrame = base * CFrame.Angles(angle, 0, 0)
+			else
+				part.CFrame = base * CFrame.Angles(0, angle, 0)
+			end
+		end
+	end
+
+	local current = map
+	local vehicle = controllers.Vehicle.getState()
+	if current == nil or vehicle == nil or runState == "idle" then
+		return
+	end
+	local chassis: BasePart = vehicle.chassis
+	local position = chassis.Position
+	local ragdolled = controllers.Ragdoll.isRagdolled()
+
+	if runState == "ready" then
+		local input = vehicle.input
+		if (input and input.throttle > 0.1) or math.abs(vehicle.forwardSpeed) > 4 then
+			startRun()
+		end
+	end
+
+	if runState == "running" then
+		local e = elapsed()
+		TracksHud.setTimer(e)
+		showGhostAt(e)
+	end
+
+	if runState == "ready" or runState == "running" then
+		-- Coins
+		if not ragdolled then
+			for index, point in coinPoints do
+				if not collected[index] and (position - point).Magnitude <= COIN_RADIUS then
+					collectCoin(index)
+				end
+			end
+		end
+		-- Sweeping bars throw the rider
+		if not ragdolled then
+			for _, sweeper in sweepers do
+				local bar = sweeper.cf * CFrame.Angles(0, spinAngle(sweeper.speed), 0)
+				-- The chassis rides below the bar; grow the box down to where the rider sits
+				local p = bar:PointToObjectSpace(position)
+				if
+					math.abs(p.X) <= sweeper.size.X / 2 + 1.5
+					and math.abs(p.Z) <= sweeper.size.Z / 2 + 2.5
+					and p.Y >= -sweeper.size.Y / 2 - 5
+					and p.Y <= sweeper.size.Y / 2 + 1
+				then
+					controllers.Vehicle.hazardHit(nil)
+				end
+			end
+		end
+		-- First-time cues
+		if firstTimeHere() then
+			for _, cue in cues do
+				if not cue.shown and inBox(cue.cf, cue.size, position, Vector3.new(2, 4, 2)) then
+					cue.shown = true
+					TracksHud.showCue(cueText(cue.kind), 1.6)
+					controllers.Hud.pulse(if cue.kind == "jump" then "Jump" else "LeanBack", 1.6)
+				end
+			end
+			-- Pip honks and points if the car sits still
+			if
+				current.id == StarterMaps.FIRST_MAP
+				and not ragdolled
+				and math.abs(vehicle.forwardSpeed) < 2
+				and not TracksHud.resultsOpen()
+			then
+				idleTime += dt
+				if idleTime >= Config.Tracks.idleHonkTime then
+					idleTime = 0
+					controllers.Juice.fire("Honk")
+					TracksHud.showCue("HONK HONK! " .. cueText("drive"), 2.5)
+					controllers.Hud.pulse("Gas", 3)
+				end
+			else
+				idleTime = 0
+			end
+		end
+	end
+end
+
+---------------------------------------------------------------------------
+-- Parts streamed in: coins and spinners keep their built frame as the base for spinning
+---------------------------------------------------------------------------
+
+local function watchTag(tag: string, store: { [BasePart]: CFrame }, onAdded: ((BasePart) -> ())?)
+	local function add(instance: Instance)
+		if instance:IsA("BasePart") then
+			store[instance] = (instance:GetAttribute("BaseCFrame") :: CFrame?) or instance.CFrame
+			if onAdded then
+				onAdded(instance)
+			end
+		end
+	end
+	CollectionService:GetInstanceAddedSignal(tag):Connect(add)
+	CollectionService:GetInstanceRemovedSignal(tag):Connect(function(instance)
+		store[instance :: BasePart] = nil
+	end)
+	for _, instance in CollectionService:GetTagged(tag) do
+		add(instance)
+	end
+end
+
+-- Other players' cars and riders are see-through in Tracks
+local function ghostRemote(model: Instance)
+	if not model:IsA("Model") or model:GetAttribute("OwnerUserId") == LocalPlayer.UserId then
+		return
+	end
+	local function fade(d: Instance)
+		if d:IsA("BasePart") and workspace:GetAttribute("Mode") == "Tracks" then
+			d.LocalTransparencyModifier = 1 - GHOST_OPACITY
+		end
+	end
+	for _, d in model:GetDescendants() do
+		fade(d)
+	end
+	model.DescendantAdded:Connect(fade)
+end
+
+---------------------------------------------------------------------------
+
+function TracksClient.getMap(): StarterMaps.MapDef?
+	return map
+end
+
+function TracksClient.getRunState(): string
+	return runState
+end
+
+local function openPicker()
+	if TracksHud.pickerOpen() then
+		TracksHud.closePicker()
+		return
+	end
+	local entries = {}
+	for _, def in StarterMaps.maps do
+		local track = controllers.Profile.track(def.id)
+		table.insert(entries, {
+			id = def.id,
+			name = def.name,
+			best = if track then track.best / 1000 else nil,
+			stars = if track then track.stars or 0 else 0,
+			current = map ~= nil and map.id == def.id,
+		})
+	end
+	TracksHud.openPicker(entries, function(mapId)
+		Net.send("Map.Go", mapId)
+	end)
+end
+
+local NOTICES = {
+	saveDown = "Saving is down right now, so progress from this session won't be kept. Sorry!",
+}
+
+function TracksClient.init(all)
+	controllers = all
+	ghostFolder = Instance.new("Folder")
+	ghostFolder.Name = "LocalGhosts"
+	ghostFolder.Parent = workspace
+end
+
+function TracksClient.start()
+	while controllers.Hud.getGui() == nil do
+		task.wait()
+	end
+	TracksHud.build(controllers.Hud.getGui(), controllers.Hud.getResetButton(), {
+		onMaps = openPicker,
+		onSettings = function()
+			if controllers.Settings.isOpen() then
+				controllers.Settings.close()
+			else
+				controllers.Settings.open()
+			end
+		end,
+	})
+	TracksHud.setTimer(nil)
+	TracksHud.setCheckpoints(0, 0)
+
+	controllers.Profile.Changed:Connect(function(view, previous)
+		TracksHud.setWallet(view.coins, view.stars, controllers.Profile.goal())
+		if previous == nil then
+			-- The first profile decides the first-time cues and forced assist for the map we are on
+			prepareMap(LocalPlayer:GetAttribute("MapId"))
+		end
+	end)
+	controllers.Profile.Notice:Connect(function(key)
+		local message = NOTICES[key]
+		if message then
+			TracksHud.toast(message, 8)
+		end
+	end)
+
+	watchTag("Coin", coinParts, function(part)
+		local index = part:GetAttribute("CoinIndex")
+		setCoinVisible(part, not (isOnMap(part) and collected[index :: number]))
+	end)
+	watchTag("Spinner", spinnerParts)
+
+	LocalPlayer:GetAttributeChangedSignal("MapId"):Connect(function()
+		prepareMap(LocalPlayer:GetAttribute("MapId"))
+	end)
+	prepareMap(LocalPlayer:GetAttribute("MapId"))
+
+	-- A new car (map entry, equip) starts a fresh run
+	controllers.Vehicle.Spawned:Connect(function()
+		if map then
+			resetRun()
+		end
+	end)
+	controllers.Vehicle.CheckpointReached:Connect(onCheckpoint)
+	controllers.Vehicle.Touched:Connect(onTouched)
+
+	Net.listen("Run.Result", function(result)
+		if type(result) ~= "table" or map == nil or result.mapId ~= map.id or runState ~= "finished" then
+			return
+		end
+		resultToken += 1
+		showResult(result)
+	end)
+	Net.listen("Run.Ghost", function(mapId, ghost)
+		if type(mapId) ~= "string" then
+			return
+		end
+		if type(ghost) ~= "string" then
+			ghostRuns[mapId] = nil
+			return
+		end
+		local raw = GhostCodec.fromBase64(ghost)
+		local samples, rate = nil, 0
+		if raw then
+			samples, rate = GhostCodec.decode(raw)
+		end
+		if samples and rate > 0 then
+			ghostRuns[mapId] = { samples = samples, rate = rate }
+		end
+	end)
+
+	local vehicles = workspace:WaitForChild("Vehicles")
+	vehicles.ChildAdded:Connect(ghostRemote)
+	for _, model in vehicles:GetChildren() do
+		ghostRemote(model)
+	end
+
+	RunService.RenderStepped:Connect(update)
+end
+
+return TracksClient

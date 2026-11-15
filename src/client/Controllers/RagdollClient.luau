@@ -296,6 +296,13 @@ local function flail(rider)
 	part:ApplyImpulse(random:NextUnitVector() * Config.Rider.flailImpulse * part.AssemblyMass)
 end
 
+-- Respawn by itself this long after a throw (Pip's Hill: 1 s, so a first-time player is never stuck
+-- wondering what to press). nil = wait for RESPAWN or the normal lifetime.
+local autoRespawnAfter: number? = nil
+function RagdollClient.setAutoRespawn(seconds: number?)
+	autoRespawnAfter = seconds
+end
+
 function RagdollClient.respawn()
 	local rider = localRider
 	if not rider or rider.state ~= "ragdoll" then
@@ -427,7 +434,9 @@ local function render(dt: number)
 					rider.respawnOffered = true
 					RagdollClient.RespawnAvailable:Fire()
 				end
-				if rider.respawnOffered and controllers.Input.consume("respawn") then
+				local asked = rider.respawnOffered and controllers.Input.consume("respawn")
+				local auto = autoRespawnAfter ~= nil and rider.ragdollTime >= autoRespawnAfter
+				if asked or auto then
 					RagdollClient.respawn()
 				elseif rider.ragdollTime >= Config.Rider.lifetime then
 					local fade =
@@ -465,6 +474,8 @@ local function addVehicle(model: Instance)
 		riders[model] = rider
 		if isLocal then
 			localRider = rider
+		elseif workspace:GetAttribute("Mode") == "Tracks" then
+			setTransparency(rider, 0.4) -- other players are ghosts in Tracks (60% opacity, like their cars)
 		end
 	end)
 end

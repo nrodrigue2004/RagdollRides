@@ -18,3 +18,18 @@
 - 2026-11-15 (1b): Mesh deformation uses the body shell part (Body_Shell, or Panel_Floor on the blockouts). Device memory cannot be read from a game script, so the benchmark uses fps plus the player's own manual graphics quality (under 4 = off).
 - 2026-11-15 (1b): Damage.State server limit is 5 per s, burst 6 (clients send at most 4) so explosion and repair sends never count toward the kick limit. Owners resend every 3 s while damaged, which also covers late joiners.
 - 2026-11-15 (1b): The HUD shows the damage silhouette on the test track too (the spec puts it in Brawl and Highway), so it can be checked now.
+- 2026-11-15 (2): Profile v1 additions (no spec field changed): tracks = { [mapId] = { best ms, stars, splits } }, ghosts and ghostOrder (best-run ghosts; starter maps always kept, newest 20 others), flags.boardBanDay (3 rejected runs in 10 min).
+- 2026-11-15 (2): The DataStore value is { data = profile, lock = { jobId, time } }. A join waits 4 x 5 s for another server's lock, takes over one older than 30 min, else asks the player to rejoin. If DataStores are down at join, the player plays on a fresh profile that is never saved and is told so. Studio without API access keeps profiles in memory.
+- 2026-11-15 (2): The time that counts is the driver's own timer if it is within 0.25 s of the server's clock for the same run, else the server's. Checkpoint and finish reports count only with the car within 80 studs of them on the server.
+- 2026-11-15 (2): Trail coins are picked up on the client and the count is sent with Run.Finish; the server clamps it to the map's coin count (13 at most on a starter map, inside the daily cap).
+- 2026-11-15 (2): The speed check lets through a jump that lands within 25 studs of a respawn point (start, checkpoints, hazard respawns), so resets are never flagged.
+- 2026-11-15 (2): In Tracks every chassis is in the Ghost collision group: cars pass through each other and wheel raycasts use the chassis group so they ignore other cars. Other players' cars and riders show at 60% opacity, like your own ghost.
+- 2026-11-15 (2): Pip's Hill's spinner is a full-width foam roller with a guaranteed-hit volume (the beat sheet's "hit is guaranteed") and respawn just past it; Tumble Gulch's is a sweeping bar checked on the client against the car, a real dodge with the normal checkpoint respawn.
+- 2026-11-15 (2): Each map resets a falling car 30 studs below its lowest piece; a decorative ground sits 45 studs below so a falling car never lands on it.
+- 2026-11-15 (2): First-time players spawn straight onto Pip's Hill; returning players start on the first starter map without Gold. A MAPS picker stands in for the hub (milestone 6). The test track stays for the DEV tests only.
+- 2026-11-15 (2): Pip's Hill's first finish pays exactly 100 coins and 1 star (no boost) instead of the normal pay, once. Later finishes pay normally.
+- 2026-11-15 (2): Results lock for 2 s, then NEXT counts down 5 s and goes by itself. RETRY resets the car to the start line locally (no new car), so it is instant.
+- 2026-11-15 (2): Settings use choice buttons and -/+ steppers only (nothing typed). They save at most once per 5 s; server values never overwrite a change not yet sent.
+- 2026-11-15 (2): Onboarding funnel steps are logged to Roblox analytics: spawned on Pip's Hill, drove off, checkpoint 1, checkpoint 2, finished Pip's Hill, finished Lean Ledge.
+- 2026-11-15 (2): In Tracks the damage silhouette shows only once the car is damaged (less clutter on a clean run).
+- 2026-11-15 (2): Milestone list corrected to the spec's numbering (2 Core loop ... 9 Polish and launch); quick races move to milestone 6 with the round manager.

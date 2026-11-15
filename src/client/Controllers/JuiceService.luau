@@ -93,6 +93,13 @@ function JuiceService.setShake(enabled: boolean)
 	controllers.Camera.setReducedMotion(not enabled)
 end
 
+-- Sound effects volume (settings: 0..1)
+function JuiceService.setVolume(value: number)
+	if soundGroup then
+		soundGroup.Volume = math.clamp(value, 0, 1)
+	end
+end
+
 function JuiceService.init(all)
 	controllers = all
 	soundGroup = Instance.new("SoundGroup")

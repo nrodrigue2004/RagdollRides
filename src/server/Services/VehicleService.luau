@@ -10,9 +10,20 @@ local Config = require(Shared.Config)
 local Net = require(Shared.Net)
 local VehicleBuilder = require(Shared.VehicleBuilder)
 
+local Signal = require(Shared.Util.Signal)
+
+local DataService = require(script.Parent.DataService)
 local TestTrack = require(script.Parent.TestTrack)
 
 local VehicleService = {}
+
+VehicleService.Spawned = Signal.new() -- (player, model)
+
+-- Where a player's car goes when it spawns with no position given (TracksService sets it: the start of
+-- the player's current map). nil = the test track's spawn row.
+VehicleService.homeFor = nil :: ((Player) -> CFrame?)?
+-- Called when a player joins instead of spawning a car on the test track (TracksService sets it)
+VehicleService.onJoin = nil :: ((Player) -> ())?
 
 local vehiclesFolder: Folder
 local vehicles: { [Player]: Model } = {}
@@ -62,15 +73,22 @@ function VehicleService.spawn(player: Player, vehicleId: string, at: CFrame?)
 		slot = freeSlot()
 		slots[player] = slot
 	end
-	local spawnCFrame = TestTrack.spawnCFrame(slot)
+	local home = if at == nil and VehicleService.homeFor then VehicleService.homeFor(player) else nil
+	local spawnCFrame = at or home or TestTrack.spawnCFrame(slot)
 	local model = VehicleBuilder.build(vehicleId, player.UserId)
 	local chassis = model.PrimaryPart :: BasePart
-	model:SetAttribute("SpawnCFrame", spawnCFrame)
+	-- The first respawn point: where the car was put down (the map's start in Tracks)
+	model:SetAttribute("SpawnCFrame", yawOnly(spawnCFrame))
+	-- Tracks free runs: other players' cars pass through each other (spec: Tracks > ghosts)
+	local mode = workspace:GetAttribute("Mode")
+	if mode == "Tracks" then
+		chassis.CollisionGroup = "Ghost"
+	end
 
 	-- Drop the car slightly above the ground so the suspension settles on spawn.
 	local class = Config.Classes[Config.Vehicles[vehicleId].class]
 	local lift = class.colliderSize[2] / 2 + class.wheelRadius + class.suspensionTravel + 0.5
-	model:PivotTo((at or spawnCFrame) + Vector3.new(0, lift, 0))
+	model:PivotTo(spawnCFrame + Vector3.new(0, lift, 0))
 
 	model.ModelStreamingMode = Enum.ModelStreamingMode.PersistentPerPlayer
 	model.Parent = vehiclesFolder
@@ -80,10 +98,28 @@ function VehicleService.spawn(player: Player, vehicleId: string, at: CFrame?)
 	vehicles[player] = model
 	player:SetAttribute("VehicleId", vehicleId)
 	Net.fire("Vehicle.Spawned", player, vehicleId)
+	VehicleService.Spawned:Fire(player, model)
+end
+
+-- Vehicles a player may drive: the ones they own; Studio and admins may try every vehicle
+function VehicleService.mayDrive(player: Player, vehicleId: string): boolean
+	if Config.Vehicles[vehicleId] == nil then
+		return false
+	end
+	if DataService.isAdmin(player) then
+		return true
+	end
+	local profile = DataService.get(player)
+	local entry = profile and profile.vehicles[vehicleId]
+	return entry ~= nil and entry.owned == true
 end
 
 local function onPlayerAdded(player: Player)
-	VehicleService.spawn(player, Config.DefaultVehicle)
+	if VehicleService.onJoin then
+		VehicleService.onJoin(player)
+	else
+		VehicleService.spawn(player, Config.DefaultVehicle)
+	end
 end
 
 local function onPlayerRemoving(player: Player)
@@ -102,14 +138,22 @@ function VehicleService.init()
 	vehiclesFolder.Parent = workspace
 
 	Net.on("Vehicle.Equip", function(player: Player, vehicleId: string)
-		if Config.Vehicles[vehicleId] == nil then
+		if not VehicleService.mayDrive(player, vehicleId) then
 			return
 		end
-		-- Milestone 1 test track: every vehicle is free to try. Ownership checks arrive with saves (milestone 2).
+		local profile = DataService.get(player)
+		if profile and profile.vehicles[vehicleId] and profile.vehicles[vehicleId].owned then
+			profile.equippedVehicle = vehicleId
+			DataService.changed(player)
+		end
+		-- On a map the new car starts at the map's start (the run starts over); on the test track it
+		-- appears where the old one was.
 		local current = vehicles[player]
 		local at: CFrame? = nil
-		if current and current.PrimaryPart then
-			at = yawOnly(current.PrimaryPart.CFrame)
+		if VehicleService.homeFor == nil or VehicleService.homeFor(player) == nil then
+			if current and current.PrimaryPart then
+				at = yawOnly(current.PrimaryPart.CFrame)
+			end
 		end
 		VehicleService.spawn(player, vehicleId, at)
 	end)

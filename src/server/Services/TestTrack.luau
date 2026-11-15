@@ -1,4 +1,5 @@
--- TestTrack: the milestone 1 test track, built from code so it lives in git.
+-- TestTrack: the milestone 1 test track, built from code so it lives in git. From milestone 2 players
+-- start on the starter maps; Studio and admins reach this track from the dev panel (Map.Go "test_track").
 -- It holds one of everything the feel and crash tests need: a long flat strip with distance marks and a
 -- crash wall, ramps and a kicker, a 20-stud drop tower, a hill for air time, a bouncer and a speed pad,
 -- loose foam cubes to knock around, a sand patch for dust, and checkpoints.

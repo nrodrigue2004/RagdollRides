@@ -10,15 +10,17 @@ A Roblox physics driving game: weighty cars, heavy crashes, a rider who gets thr
 4. **Open it** one of two ways:
    - Quick: in the repo folder run `rojo build default.project.json -o RagdollRides.rbxl`, then double-click `RagdollRides.rbxl`.
    - Live sync (best while building): run `rojo serve` in the repo folder, open a new Baseplate in Studio, open the Rojo plugin and click **Connect**.
-5. Press **Play** (F5). You spawn in the Starter Buggy on the test track.
+5. Press **Play** (F5). You spawn in the Starter Buggy on Pip's Hill, the first map. Drive off to start the timer.
+6. To test saving in Studio, turn on **Game Settings → Security → Enable Studio Access to API Services** (the place must be published first). Without it, progress is kept only until you stop playing.
 
 ## Controls
 - Keyboard: W/S gas and brake (S reverses when stopped), A/D steer, Space jump, Q/E lean in the air, Left Shift handbrake, R reset (or respawn after a crash), F flip.
 - Gamepad: RT gas, LT brake, left stick steer and lean, A jump, B handbrake, X reset or respawn, Y flip.
 - Phone: on-screen buttons. Tap anywhere while thrown to flail.
+- Top right: **MAPS** picks a starter map, the **cog** opens settings (button size, left-handed layout, steering help, shake, reduced motion, dents, volumes).
 
 ## Dev panel
-In Studio there is a **DEV** button in the top left. It swaps vehicle class and runs the spec's feel tests (Accel, Drift, Drop, Ram) with PASS/FAIL and numbers. See `notes/Tasks.md` for the full Studio test list.
+In Studio there is a **DEV** button on the left edge. It swaps vehicle class and runs the spec's feel and crash tests with PASS/FAIL and numbers (they take you to the test track first). **Pip's Hill** and **Test track** jump between them, and **Fresh save** makes you a first-time player again (to replay the onboarding). See `notes/Tasks.md` for the full Studio test list.
 
 ## Repo notes
 `CLAUDE.md` explains the layout; progress, tasks and decisions are in `notes/`.

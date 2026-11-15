@@ -6,6 +6,10 @@ local process = require("@lune/process")
 local Config = require("../src/shared/Config")
 local Damage = require("../src/shared/Damage")
 local DamageModel = require("../src/shared/DamageModel")
+local GhostCodec = require("../src/shared/GhostCodec")
+local ProfileSchema = require("../src/shared/ProfileSchema")
+local StarterMaps = require("../src/shared/StarterMaps")
+local TracksMath = require("../src/shared/TracksMath")
 local NetSchema = require("../src/shared/NetSchema")
 local PoseCodec = require("../src/shared/PoseCodec")
 local Remotes = require("../src/shared/Remotes")
@@ -629,6 +633,338 @@ test("damage config covers every mode and remote size", function()
 end)
 
 ---------------------------------------------------------------------------
+-- Milestone 2: profiles, Tracks scoring, ghosts, starter maps
+local TC = Config.Tracks
+
+test("profile: defaults, load, migrate and reconcile", function()
+	local fresh = ProfileSchema.load(nil)
+	check(fresh.v == 1 and fresh.coins == 0 and fresh.stars == 0, "fresh profile")
+	check(fresh.vehicles.starter_buggy.owned == true, "starter buggy owned")
+	check(fresh.settings.steerAssist == "high" and fresh.settings.dents == "full", "default settings")
+	check(fresh.tut.pipHill == false, "tutorial flags")
+	-- An old save missing new fields gets them, and keeps what it had
+	local old = {
+		v = 1,
+		coins = 250,
+		settings = { sfx = 0.3 },
+		vehicles = { pocket_sedan = { owned = true } },
+		tut = { pipHill = true },
+	}
+	local loaded = ProfileSchema.load(old)
+	check(loaded.coins == 250, "keeps coins")
+	near(loaded.settings.sfx, 0.3, 1e-9, "keeps a setting")
+	check(loaded.settings.music == 0.6, "fills a missing setting")
+	check(loaded.tut.pipHill == true and loaded.tut.lean == false, "keeps and fills tutorial flags")
+	check(
+		loaded.vehicles.pocket_sedan.owned and loaded.vehicles.starter_buggy == nil,
+		"vehicles map left as saved"
+	)
+	check(loaded.daily ~= nil and loaded.tracks ~= nil and loaded.ghosts ~= nil, "new tables added")
+end)
+
+test("profile: settings from a client are checked", function()
+	local ok = ProfileSchema.sanitizeSettings({ controlSize = 3, steerAssist = "low", shake = false })
+	check(ok ~= nil, "valid settings accepted")
+	if ok then
+		near(ok.controlSize, 1.4, 1e-9, "control size clamped to 140%")
+		check(ok.steerAssist == "low" and ok.shake == false, "values kept")
+		check(ok.music == nil, "only the keys sent")
+	end
+	check(ProfileSchema.sanitizeSettings({ steerAssist = "turbo" }) == nil, "unknown choice rejected")
+	check(ProfileSchema.sanitizeSettings({ nickname = "x" }) == nil, "unknown key rejected (no free text)")
+	check(ProfileSchema.sanitizeSettings({ sfx = 0 / 0 }) == nil, "NaN rejected")
+	check(ProfileSchema.sanitizeSettings({ shake = "yes" }) == nil, "wrong type rejected")
+	check(ProfileSchema.sanitizeSettings("hi") == nil, "not a table")
+end)
+
+test("profile: days roll over at UTC midnight", function()
+	local profile = ProfileSchema.default()
+	-- 2026-11-15 23:59:59 UTC and one second later
+	local before = 1794787199
+	check(ProfileSchema.dayKey(before) == 20261115, "day key " .. ProfileSchema.dayKey(before))
+	check(ProfileSchema.rollDay(profile, before), "first roll resets")
+	profile.daily.coinsByMode.tracks = 900
+	check(not ProfileSchema.rollDay(profile, before - 60), "same day keeps")
+	check(profile.daily.coinsByMode.tracks == 900, "counter kept")
+	check(ProfileSchema.rollDay(profile, before + 1), "next day resets")
+	check(profile.daily.coinsByMode.tracks == 0 and profile.daily.day == 20261116, "fresh counters")
+end)
+
+test("profile: ghosts and receipts are bounded", function()
+	local profile = ProfileSchema.default()
+	local keep = { pips_hill = true }
+	ProfileSchema.storeGhost(profile, "pips_hill", "A", keep)
+	for i = 1, 25 do
+		ProfileSchema.storeGhost(profile, "map" .. i, "G" .. i, keep)
+	end
+	check(profile.ghosts.pips_hill == "A", "starter ghost always kept")
+	check(profile.ghosts.map1 == nil and profile.ghosts.map5 == nil, "oldest player-map ghosts dropped")
+	check(profile.ghosts.map25 == "G25" and profile.ghosts.map6 == "G6", "newest 20 kept")
+	check(ProfileSchema.recordReceipt(profile, "p1"), "new receipt")
+	check(not ProfileSchema.recordReceipt(profile, "p1"), "duplicate receipt refused")
+	for i = 2, 120 do
+		ProfileSchema.recordReceipt(profile, "p" .. i)
+	end
+	check(#profile.receipts == 100, "last 100 kept")
+end)
+
+test("tracks: stars, coins, caps and boosts", function()
+	check(TracksMath.starTier(29.9, 20, TC) == 2, "under x 1.5 is Silver")
+	check(TracksMath.starTier(30, 20, TC) == 1, "exactly x 1.5 is not under it")
+	check(TracksMath.starTier(21.9, 20, TC) == 3, "under x 1.1 is Gold")
+	check(TracksMath.starTier(40, 20, TC) == 1, "finish is Bronze")
+	check(TracksMath.starsToPay(3, 1) == 2, "pay only new tiers")
+	check(TracksMath.starsToPay(1, 3) == 0, "never twice")
+	check(TracksMath.finishCoins(true, 0, TC) == 50, "starter map 50")
+	check(TracksMath.finishCoins(false, 2, TC) == 30, "player map 30")
+	check(TracksMath.finishCoins(true, 3, TC) == 5, "after 3 finishes 5")
+	check(TracksMath.applyCap(50, 0, 1180, TC.dailyCap) == 20, "daily cap")
+	check(TracksMath.applyCap(50, 0.2, 0, TC.dailyCap) == 60, "boost applies before the cap")
+	near(TracksMath.boost(7, 0, Config.Economy), 0.5, 1e-9, "friend boost max +50%")
+	near(TracksMath.boost(2, 3, Config.Economy), 0.35, 1e-9, "friends + rebirths")
+end)
+
+test("tracks: run validation (order, minimum time, speed)", function()
+	local function run(cps)
+		return { mapId = "m", startTime = 100, checkpoints = cps, checkpointCount = 2, speedFlags = 0 }
+	end
+	local ok, _, elapsed = TracksMath.validateFinish(run({ 105, 110 }), 120, 20, TC)
+	check(ok and math.abs(elapsed - 20) < 1e-9, "a clean run")
+	ok = TracksMath.validateFinish(run({ 105 }), 120, 20, TC)
+	check(not ok, "missed checkpoint")
+	ok = TracksMath.validateFinish(run({ 110, 105 }), 120, 20, TC)
+	check(not ok, "out of order")
+	ok = TracksMath.validateFinish(run({ 102, 104 }), 111, 20, TC)
+	check(not ok, "faster than creator x 0.6")
+	near(TracksMath.minimumTime(4, TC), 5, 1e-9, "5 s floor")
+	local flagged = run({ 105, 110 })
+	flagged.speedFlags = 1
+	check(not TracksMath.validateFinish(flagged, 120, 20, TC), "speed flag rejects")
+	local r = run({})
+	check(TracksMath.acceptCheckpoint(r, 1), "first checkpoint")
+	check(not TracksMath.acceptCheckpoint(r, 2), "cannot skip")
+	r.checkpoints[1] = 101
+	check(not TracksMath.acceptCheckpoint(r, 1), "once only")
+	check(TracksMath.acceptCheckpoint(r, 2), "next in order")
+	check(not TracksMath.acceptCheckpoint(r, 3), "out of range")
+	check(TracksMath.tooFast(200, 1, 100, 1.4, 50), "200 studs/s flagged")
+	check(not TracksMath.tooFast(180, 1, 100, 1.4, 50), "within allowance")
+	check(TracksMath.formatTime(65.321) == "1:05.32", "format " .. TracksMath.formatTime(65.321))
+	check(TracksMath.split(9500, 10000) == -500, "ahead is negative")
+end)
+
+test("ghost codec round trip and base64", function()
+	local samples = {}
+	for i = 1, 50 do
+		local a = i * 0.1
+		table.insert(samples, {
+			x = i * 3.3,
+			y = 10 + math.sin(a),
+			z = -i * 7.1,
+			qx = 0,
+			qy = math.sin(a / 2),
+			qz = 0,
+			qw = math.cos(a / 2),
+		})
+	end
+	local b = GhostCodec.encode(samples, 5)
+	check(buffer.len(b) == 2 + 50 * 14, "14 bytes a sample")
+	local text = GhostCodec.toBase64(b)
+	local back = GhostCodec.fromBase64(text)
+	check(back ~= nil and buffer.len(back) == buffer.len(b), "base64 round trip length")
+	if back then
+		local same = true
+		for i = 0, buffer.len(b) - 1 do
+			if buffer.readu8(b, i) ~= buffer.readu8(back, i) then
+				same = false
+			end
+		end
+		check(same, "base64 round trip bytes")
+		local decoded, rate = GhostCodec.decode(back)
+		check(decoded ~= nil and #decoded == 50 and rate == 5, "decode")
+		if decoded then
+			near(decoded[20].x, 66, 0.07, "position to 1/8 stud")
+			near(decoded[20].qy, math.sin(1), 1e-3, "rotation")
+		end
+	end
+	for _, n in { 0, 1, 2, 3, 4 } do
+		local raw = buffer.create(n)
+		for i = 0, n - 1 do
+			buffer.writeu8(raw, i, (i * 77 + 5) % 256)
+		end
+		local again = GhostCodec.fromBase64(GhostCodec.toBase64(raw))
+		check(again ~= nil and buffer.len(again) == n, "base64 padding " .. n)
+	end
+	check(GhostCodec.fromBase64("abc") == nil, "bad length rejected")
+	check(GhostCodec.fromBase64("ab!d") == nil, "bad characters rejected")
+	local _, emptyRate = GhostCodec.decode(buffer.create(5))
+	check(emptyRate == 0, "bad ghost size rejected")
+	-- 90 s at 5 Hz fits easily
+	check(#GhostCodec.toBase64(buffer.create(2 + 450 * 14)) < 9000, "a 90 s ghost is under 9 KB")
+end)
+
+test("starter maps are complete and sane", function()
+	check(#StarterMaps.maps == 5, "5 starter maps")
+	for _, map in StarterMaps.maps do
+		local starts, finishes = 0, 0
+		local seen = {}
+		local maxAbs = 0
+		for _, piece in map.pieces do
+			if piece.kind == "Start" then
+				starts += 1
+			elseif piece.kind == "Finish" then
+				finishes += 1
+			elseif piece.kind == "Checkpoint" and piece.index then
+				seen[piece.index] = true
+			end
+			for _, v in { piece.x, piece.y, piece.z, piece.sx, piece.sy, piece.sz } do
+				check(v == v, map.id .. " no NaN")
+			end
+			maxAbs = math.max(maxAbs, math.abs(piece.x), math.abs(piece.y), math.abs(piece.z))
+		end
+		check(starts == 1 and finishes == 1, map.id .. " has one start and one finish")
+		check(map.checkpoints >= 1 and map.checkpoints <= 10, map.id .. " 1 to 10 checkpoints")
+		for i = 1, map.checkpoints do
+			check(seen[i] == true, map.id .. " checkpoint " .. i)
+		end
+		check(map.coins > 0, map.id .. " has coins")
+		check(maxAbs < 4000, map.id .. " fits the ghost range")
+		check(map.creatorTime >= 5, map.id .. " creator time")
+		check(StarterMaps.startPiece(map) ~= nil, map.id .. " start piece")
+	end
+	local pip = StarterMaps.byId.pips_hill
+	check(
+		pip.order == 1 and pip.reward ~= nil and pip.reward.coins == 100 and pip.reward.stars == 1,
+		"Pip's Hill pays 100 coins and 1 star"
+	)
+	check(pip.autoRespawn == 1 and pip.assist == true, "Pip's Hill respawns in 1 s with assist")
+	local trail = 0
+	for _, piece in pip.pieces do
+		if piece.kind == "Coin" then
+			trail += 1
+		end
+	end
+	check(trail == 13, "Pip's Hill has the 8-coin trail and the 5-coin arc")
+	check(StarterMaps.byId.lean_ledge.tut == "lean", "second track teaches lean")
+	check(StarterMaps.nextMap("pips_hill") == "lean_ledge", "next map")
+	check(StarterMaps.nextMap("tumble_gulch") == "pips_hill", "wraps")
+end)
+
+test("tracks: official time and payout", function()
+	near(TracksMath.officialTime(20.1, 20.2, 0.25), 20.1, 1e-9, "driver's timer when close")
+	near(TracksMath.officialTime(19.5, 20.2, 0.25), 20.2, 1e-9, "server clock when too far off")
+	near(TracksMath.officialTime(0 / 0, 20.2, 0.25), 20.2, 1e-9, "NaN falls back to the server clock")
+	local base = {
+		timeSeconds = 21,
+		creatorSeconds = 20,
+		previousTier = 0,
+		previousBestMs = nil,
+		isStarter = true,
+		finishesToday = 0,
+		trailCoins = 6,
+		coinValue = 1,
+		reward = nil,
+		rewardClaimed = false,
+		boost = 0,
+		earnedToday = 0,
+	}
+	local first = TracksMath.payout(base, TC)
+	check(first.tier == 3 and first.stars == 3, "first Gold pays all 3 stars")
+	check(first.coins == 56 and not first.capped, "50 for the finish + 6 trail coins")
+	check(first.isBest and first.bestMs == 21000, "first finish is the best")
+	local again = table.clone(base)
+	again.previousTier, again.previousBestMs, again.timeSeconds = 3, 21000, 25
+	local second = TracksMath.payout(again, TC)
+	check(second.stars == 0 and not second.isBest and second.bestMs == 21000, "no stars twice, best kept")
+	local tired = table.clone(base)
+	tired.finishesToday, tired.trailCoins = 3, 0
+	check(TracksMath.payout(tired, TC).coins == 5, "4th finish today pays 5")
+	local capped = table.clone(base)
+	capped.earnedToday = TC.dailyCap - 10
+	local c = TracksMath.payout(capped, TC)
+	check(c.coins == 10 and c.capped, "the cap cuts the payout and says so")
+	local boosted = table.clone(base)
+	boosted.boost = 0.5
+	check(TracksMath.payout(boosted, TC).coins == 84, "boost on finish and trail coins")
+	local pip = table.clone(base)
+	pip.reward, pip.boost, pip.timeSeconds = { coins = 100, stars = 1 }, 0.5, 40
+	local p = TracksMath.payout(pip, TC)
+	check(
+		p.firstReward and p.coins == 100 and p.stars == 1,
+		"Pip's Hill first finish: exactly 100 coins, 1 star"
+	)
+	pip.rewardClaimed, pip.previousTier = true, 1
+	local p2 = TracksMath.payout(pip, TC)
+	check(not p2.firstReward and p2.coins == 84 and p2.stars == 0, "after that, normal pay")
+	check(
+		TC.pipHillCoins == StarterMaps.byId.pips_hill.reward.coins
+			and TC.pipHillStars == StarterMaps.byId.pips_hill.reward.stars,
+		"config and map agree on Pip's Hill's reward"
+	)
+end)
+
+test("starter maps: respawn points, bounds, kill height, cues", function()
+	for _, map in StarterMaps.maps do
+		local points = StarterMaps.respawnPoints(map)
+		check(#points >= 1 + map.checkpoints, map.id .. " start + every checkpoint respawn")
+		local lo, hi = StarterMaps.bounds(map)
+		check(lo[2] <= hi[2] and lo[1] <= hi[1] and lo[3] <= hi[3], map.id .. " bounds")
+		check(StarterMaps.killY(map) < lo[2], map.id .. " kill height under the lowest piece")
+		for i = 1, map.checkpoints do
+			local cp = StarterMaps.find(map, "Checkpoint", i)
+			check(cp ~= nil and cp.index == i, map.id .. " find checkpoint " .. i)
+		end
+		check(StarterMaps.find(map, "Finish") ~= nil, map.id .. " find finish")
+		-- Rough pace check: creator time is above a flat-out run (a buggy at 70% of top speed) and not
+		-- absurdly slow. Real tuning is a Studio playtest (notes/Tasks.md).
+		local length = 0
+		for _, piece in map.pieces do
+			if piece.kind == "Road" then
+				length += piece.sz
+			end
+		end
+		local flatOut = length / (Config.Classes.Buggy.topSpeed * 0.7)
+		check(
+			map.creatorTime > flatOut and map.creatorTime < flatOut * 2.5,
+			map.id .. " creator time is plausible"
+		)
+	end
+	local pip = StarterMaps.byId.pips_hill
+	local hazard = StarterMaps.find(pip, "Hazard")
+	check(hazard ~= nil, "Pip's Hill has its guaranteed spinner hit")
+	if hazard then
+		local x, y, z = StarterMaps.hazardRespawn(hazard)
+		local fx, fz = StarterMaps.forward(hazard.yaw)
+		local along = (x - hazard.x) * fx + (z - hazard.z) * fz
+		check(along > hazard.sz / 2, "respawn is past the hazard, along the road")
+		near(y, hazard.y - hazard.sy / 2, 1e-9, "respawn on the road")
+	end
+	local spinner = StarterMaps.find(pip, "Spinner")
+	check(spinner ~= nil and spinner.axis == "across", "Pip's Hill spinner is a full-width roller")
+	check(StarterMaps.find(pip, "JumpCue") ~= nil, "JUMP cue before the ramp")
+	check(StarterMaps.find(StarterMaps.byId.lean_ledge, "LeanCue") ~= nil, "LEAN cue on Lean Ledge")
+	check(
+		StarterMaps.find(StarterMaps.byId.tumble_gulch, "Hazard") == nil,
+		"Tumble Gulch's spinner is a real dodge"
+	)
+	local fx, fz = StarterMaps.forward(0)
+	check(math.abs(fx) < 1e-9 and math.abs(fz + 1) < 1e-9, "yaw 0 faces -Z")
+end)
+
+test("profile: client view shows only display data", function()
+	local profile = ProfileSchema.default()
+	profile.inventory.starter_paint = true
+	profile.tracks.pips_hill = { best = 20000, stars = 2, splits = { 5000 } }
+	local view = ProfileSchema.clientView(profile)
+	check(view.coins == 0 and view.stars == 0, "wallet")
+	check(table.find(view.owned, Config.DefaultVehicle) ~= nil, "owned vehicles")
+	check(table.find(view.inventory, "starter_paint") ~= nil, "inventory ids")
+	check(view.tracks.pips_hill.best == 20000, "best times")
+	check(view.ghosts == nil and view.receipts == nil and view.flags == nil, "no ghosts, receipts or flags")
+	check(profile.flags.boardBanDay == 0, "board ban flag defaults off")
+end)
+
+---------------------------------------------------------------------------
 -- Optional: check the built place file has the scripts in the right services
 local placePath = process.args[1]
 if placePath then
@@ -647,6 +983,11 @@ if placePath then
 				"VehicleMath",
 				"Damage",
 				"DamageModel",
+				"GhostCodec",
+				"ProfileSchema",
+				"StarterMaps",
+				"MapSpace",
+				"TracksMath",
 				"PoseCodec",
 				"VehicleBuilder",
 			}
@@ -673,13 +1014,32 @@ if placePath then
 				"Debris",
 				"DamageController",
 				"CrashReplay",
+				"ProfileClient",
+				"SettingsMenu",
+				"TracksClient",
 			}
 		do
 			check(client ~= nil and client:FindFirstChild("Controllers"):FindFirstChild(name) ~= nil, name)
 		end
-		for _, name in { "DamageVisuals", "ExplosionFx", "MeshDents" } do
+		for _, name in { "DamageVisuals", "ExplosionFx", "MeshDents", "Confetti" } do
 			local fx = client and client:FindFirstChild("Fx")
 			check(fx ~= nil and fx:FindFirstChild(name) ~= nil, "Fx." .. name)
+		end
+		local ui = client and client:FindFirstChild("Ui")
+		check(ui ~= nil and ui:FindFirstChild("TracksHud") ~= nil, "Ui.TracksHud")
+		local services = server and server:FindFirstChild("Services")
+		for _, name in
+			{
+				"CollisionGroups",
+				"DataService",
+				"EconomyService",
+				"MapBuilder",
+				"TestTrack",
+				"TracksService",
+				"VehicleService",
+			}
+		do
+			check(services ~= nil and services:FindFirstChild(name) ~= nil, "Services." .. name)
 		end
 		check(game:GetService("Players").CharacterAutoLoads == false, "no avatar characters")
 		check(game:GetService("Workspace").StreamingEnabled == true, "streaming on")

@@ -29,7 +29,9 @@ VehicleController.Landed = Signal.new() -- (fallSpeed)
 VehicleController.Spawned = Signal.new() -- (model)
 VehicleController.Respawned = Signal.new() -- ()
 VehicleController.Hopped = Signal.new() -- ()
-VehicleController.CheckpointReached = Signal.new() -- (index)
+VehicleController.CheckpointReached = Signal.new() -- (index, part)
+VehicleController.Touched = Signal.new() -- (part) a non-colliding trigger the car touched (Finish, ...)
+VehicleController.HazardHit = Signal.new() -- () a hazard threw the rider
 
 export type ImpactInfo = {
 	impact: number,
@@ -73,7 +75,8 @@ type Sequence = {
 
 local controllers: any = nil
 local state: any = nil -- the current vehicle's state, or nil
-local settings = { steerAssist = "High" } -- saved settings arrive in milestone 2
+local settings = { steerAssist = "High" } -- ProfileClient applies the saved setting (and maps can force High)
+local killY = Config.World.killY -- TracksClient sets each map's own (a little under its lowest road)
 local ZERO_INPUT = { throttle = 0, brake = 0, steer = 0, lean = 0, handbrake = false, analogSteer = false }
 -- Damage effects on handling (DamageController sets these from the zone numbers; spec: Damage zones)
 local CLEAN_HANDLING = {
@@ -151,9 +154,13 @@ local function onTouched(s, hit: BasePart)
 		local cf = yawOnly(hit.CFrame) - Vector3.new(0, offset, 0)
 		if s.checkpointIndex ~= index then
 			s.checkpointIndex = index
-			VehicleController.CheckpointReached:Fire(index)
+			VehicleController.CheckpointReached:Fire(index, hit)
 		end
 		s.checkpoint = cf
+		return
+	end
+	if CollectionService:HasTag(hit, "Hazard") then
+		VehicleController.hazardHit(hit:GetAttribute("RespawnCFrame") :: CFrame?)
 		return
 	end
 	local now = os.clock()
@@ -178,6 +185,8 @@ local function onTouched(s, hit: BasePart)
 	if hit.CanCollide then
 		s.recentTouch = hit
 		s.recentTouchTime = now
+	else
+		VehicleController.Touched:Fire(hit)
 	end
 end
 
@@ -302,6 +311,8 @@ local function setup(model: Model)
 		table.insert(ignore, debris)
 	end
 	params.FilterDescendantsInstances = ignore
+	-- Wheels see what the chassis would hit: in Tracks other cars are ghosts, so wheels pass through them
+	params.CollisionGroup = chassis.CollisionGroup
 	s.params = params
 
 	table.insert(
@@ -779,7 +790,7 @@ local function postStep(dt: number)
 	end
 
 	-- Kill plane
-	if chassis.Position.Y < Config.World.killY then
+	if chassis.Position.Y < killY then
 		VehicleController.reset()
 	end
 
@@ -972,6 +983,37 @@ function VehicleController.placeAt(cf: CFrame, velocity: Vector3?, angular: Vect
 	s.lastVelocity = velocity or Vector3.zero
 	s.skipImpactFrames = 3
 	s.airTime = 0
+end
+
+-- A hazard threw the rider (a Hazard trigger, or a spinner bar's hit test in TracksClient). respawnAt is
+-- where to come back (Pip's Hill: just past the hazard); nil keeps the last checkpoint.
+function VehicleController.hazardHit(respawnAt: CFrame?)
+	local s = state
+	if not s or not s.driverPresent or s.sequence then
+		return
+	end
+	local rules = Config.EjectRules[mode()] or Config.EjectRules.Tracks
+	if not rules.hazard then
+		return
+	end
+	if respawnAt then
+		s.checkpoint = yawOnly(respawnAt)
+	end
+	VehicleController.ejectRider(Config.Rider.hazardKickUp)
+	VehicleController.HazardHit:Fire()
+end
+
+-- Where the car respawns (a new run sets it back to the start); index is the checkpoint it counts as
+function VehicleController.setCheckpoint(cf: CFrame, index: number)
+	if state then
+		state.checkpoint = yawOnly(cf)
+		state.checkpointIndex = index
+	end
+end
+
+-- Falling below this height resets the car (each map sets its own; nil = the world default)
+function VehicleController.setKillY(y: number?)
+	killY = y or Config.World.killY
 end
 
 function VehicleController.rideHeight(): number

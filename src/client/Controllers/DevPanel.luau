@@ -18,6 +18,7 @@ local Stats = game:GetService("Stats")
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
+local Net = require(Shared.Net)
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -428,11 +429,25 @@ local function run(name: string, fn: () -> ())
 		controllers.Ragdoll.respawn()
 		task.wait(0.8)
 	end
-	if controllers.Damage then
-		controllers.Damage.repair() -- every test starts from a clean car
-	end
 	busy = true
 	task.spawn(function()
+		-- The feel and crash tests use the test track's spots: go there first (a new car)
+		if LocalPlayer:GetAttribute("MapId") ~= "test_track" then
+			log("Going to the test track first...")
+			Net.send("Map.Go", "test_track")
+			local arrived = waitUntil(function()
+				return LocalPlayer:GetAttribute("MapId") == "test_track" and vehicle() ~= nil
+			end, 8)
+			if not arrived then
+				log("Could not reach the test track")
+				busy = false
+				return
+			end
+			task.wait(1)
+		end
+		if controllers.Damage then
+			controllers.Damage.repair() -- every test starts from a clean car
+		end
 		local ok, err = pcall(fn)
 		controllers.Input.setOverride(nil)
 		busy = false
@@ -473,15 +488,17 @@ local function build()
 	toggle.Font = Enum.Font.GothamBold
 	toggle.TextSize = 16
 	toggle.Size = UDim2.fromOffset(64, 36)
-	toggle.Position = UDim2.fromOffset(12, 12)
+	toggle.AnchorPoint = Vector2.new(0, 0.5)
+	toggle.Position = UDim2.new(0, 12, 0.5, 0) -- left middle, clear of the coins and goal bar
 	toggle.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
 	toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
 	toggle.Parent = gui
 
 	panel = Instance.new("Frame")
 	panel.Name = "Panel"
-	panel.Position = UDim2.fromOffset(12, 56)
-	panel.Size = UDim2.fromOffset(470, 600)
+	panel.AnchorPoint = Vector2.new(0, 0.5)
+	panel.Position = UDim2.new(0, 84, 0.5, 0)
+	panel.Size = UDim2.fromOffset(470, 640)
 	panel.BackgroundColor3 = Color3.fromRGB(25, 25, 32)
 	panel.BackgroundTransparency = 0.15
 	panel.Visible = false
@@ -526,7 +543,7 @@ local function build()
 	local tests = Instance.new("Frame")
 	tests.BackgroundTransparency = 1
 	tests.Position = UDim2.fromOffset(0, 70)
-	tests.Size = UDim2.new(1, 0, 0, 154)
+	tests.Size = UDim2.new(1, 0, 0, 194)
 	tests.Parent = panel
 	local grid = Instance.new("UIGridLayout")
 	grid.CellSize = UDim2.fromOffset(104, 34)
@@ -591,18 +608,30 @@ local function build()
 		controllers.Damage.forceDents()
 		log("Dents forced on (" .. controllers.Damage.dentStatus() .. ")")
 	end)
+	button(tests, "Test track", 16, function()
+		Net.send("Map.Go", "test_track")
+		log("To the test track")
+	end)
+	button(tests, "Pip's Hill", 17, function()
+		Net.send("Map.Go", "pips_hill")
+		log("To Pip's Hill")
+	end)
+	button(tests, "Fresh save", 18, function()
+		Net.send("Dev.ResetProfile")
+		log("Profile reset: you are a first-time player again (back to Pip's Hill)")
+	end)
 
 	logLabel = Instance.new("TextLabel")
 	logLabel.BackgroundTransparency = 1
-	logLabel.Position = UDim2.fromOffset(0, 232)
-	logLabel.Size = UDim2.new(1, 0, 1, -240)
+	logLabel.Position = UDim2.fromOffset(0, 272)
+	logLabel.Size = UDim2.new(1, 0, 1, -280)
 	logLabel.Font = Enum.Font.Code
 	logLabel.TextSize = 14
 	logLabel.TextWrapped = true
 	logLabel.TextXAlignment = Enum.TextXAlignment.Left
 	logLabel.TextYAlignment = Enum.TextYAlignment.Top
 	logLabel.TextColor3 = Color3.fromRGB(235, 235, 245)
-	logLabel.Text = "Feel tests run on the test track. Pick a class, then a test."
+	logLabel.Text = "Feel tests run on the test track (they take you there). Pick a class, then a test."
 	logLabel.Parent = panel
 end
 

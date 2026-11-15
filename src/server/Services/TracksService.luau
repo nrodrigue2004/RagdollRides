@@ -252,7 +252,10 @@ local function onCheckpoint(player: Player, mapId: string, index: number, client
 end
 
 local function rejectResult(player: Player, mapId: string, reason: string)
-	noteReject(player, reason)
+	local map = mapDefs[mapId]
+	if map == nil or not map.custom then
+		noteReject(player, reason) -- a creator testing their own map is never board-banned for it
+	end
 	Net.fire(
 		"Run.Result",
 		player,

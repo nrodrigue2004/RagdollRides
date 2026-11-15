@@ -6,7 +6,7 @@ Milestones in spec order (numbers as in the spec). Each one is done when its spe
 1. **1 Driving feel**: code done 2026-11-15. Done when: DEV panel Accel, Drift, Drop and Ram all PASS for every class; 3 testers crash and respawn on a phone at 30+ fps.
 2. **1b Crashes and damage**: code done 2026-11-15. Done when: spec "Driving and damage" checks pass (DEV Crash 60, Zones, Race looks), 5 phone testers rate it heavy and responsive at 4 of 5 or higher, and the keep-or-cut call on mesh dents is recorded in Decisions.md.
 3. **2 Core loop**: code done 2026-11-15. Checkpoints, finish, coins, ghosts, Pip's Hill, 5 maps, profile saves v1. Done when: 5 people finish a session with no server errors, and 5 first-time testers finish Pip's Hill in under 30 s.
-4. **3 Map builder**: grid, pieces, test drive, publish.
+4. **3 Map builder**: code done 2026-11-15. Done when: spec "Tracks and builder" checks pass for the builder (build, save, reload and play a map in under 10 minutes; limits enforced by the server; publish gates; preset names only).
 5. **4 Browse and safety**: browse, ranking, ratings, reports, moderation.
 6. **5 Shop, passes, quests and streak**.
 7. **6 Hub and round manager, plus the party queue** (quick races fit here).
@@ -51,9 +51,29 @@ Milestone 2:
 - [ ] Output shows no errors during a 5-map session; no "[Tracks] run rejected" warnings for clean runs (if one shows, note the reason).
 - [ ] Phone: top bar, timer, MAPS and cog don't overlap the controls; results card buttons are easy to hit.
 
+Milestone 3 (builder):
+- [ ] BUILD (top right) shows your map slots: 3 free plus 7 locked VIP slots. Pick MAP 1: the camera flies over a green grid plot, your car waits at the plot's edge, the driving buttons are gone.
+- [ ] Phone (device emulator, then a real phone): one finger orbits, two fingers pan, pinch zooms. Tap Road in the tray, tap the grid: it places with a click. Tap again: another. Is it easy to aim? Are the tray and buttons big enough?
+- [ ] PC: number keys pick pieces (Shift for 11 to 20), R rotates 15 degrees (Shift+R back), T tilts, F sizes, Q/E down and up, Delete, Ctrl+Z / Ctrl+Y, Esc. Right drag orbits, middle drag or WASD pans, wheel zooms. The blue outline shows where a piece will go.
+- [ ] Build a loop: Start, roads, a 90 curve, a slope, checkpoints, a ramp, the finish. Road pieces dropped near another road's end snap onto it. Any gaps or steps where pieces meet (most likely after 15 or 45 degree turns)?
+- [ ] Select a piece: drag moves it, ROTATE/TILT/SIZE/COLOUR/UP/DOWN/DELETE work and undo. Tilted blocks, walls and platforms sit on the floor, not through it.
+- [ ] Moving pieces: spinner spins 90 deg/s, the hammer swings across the road every 2.5 s, the piston punches every 2 s and shoves the car sideways, the tilt deck rocks 15 degrees every 3 s and the car can drive over it, the hazard bar throws the rider. Two players see the same phase.
+- [ ] Limits: the tray greys a piece out at 250 pieces, 400 parts, 10 checkpoints, 12 moving pieces or 40 pads, with a short reason.
+- [ ] TEST: the car is on your start gate in under 2 s with the driving HUD back. Finish: "FINISHED in 0:xx! Ready to publish." BUILD returns to the same camera. Select a checkpoint and TEST: you start at that checkpoint (practice, never counted).
+- [ ] A map shorter than 5 s: the test finish says it is too short.
+- [ ] Autosave: build, wait 30 s, leave (Stop) and play again: BUILD → MAP 1 has your pieces. EXIT saves too.
+- [ ] MAP: the three word wheels and RANDOM make a name, up to 3 tags, FULL DAMAGE toggles. The checklist ticks START + FINISH, "Finish your map once" (after a TEST finish), "Pick a name".
+- [ ] PUBLISH in Studio (Studio uses 1 minute of play and a 1 minute cooldown): the gates answer in order (finish a Tracks run first, play time, cooldown "Publishing by itself in 1 minute"). Then "PUBLISHED! Wobbly Pickle Canyon" with confetti and INVITE the first time. Publish again after an edit: it says UPDATE and keeps the same map.
+- [ ] Change a piece after a TEST: the checklist un-ticks "Finish your map once" until you finish it again.
+- [ ] With API access on: the map record appears in the Maps_v1 DataStore (key M_<id>).
+- [ ] 2 players build at once: each gets their own plot, nobody sees the other's pieces.
+- [ ] Gamepad: the left stick pans, the right stick orbits, triggers zoom, the UI buttons can be selected (Roblox's gamepad selection).
+
 ## Placeholder art and sound
 - PLACEHOLDER ART: all 6 vehicle bodies (VehicleBuilder BODIES blockouts), the rider rig and face, test track parts.
 - PLACEHOLDER ART: dented and crushed panel looks (procedural push-in and darken; real looks go in ReplicatedStorage.Assets.PanelLooks), cracked glass (frosted, no decal), smoke, flame, glitter and explosion particles (built-in textures), explosion glow and ring (neon parts).
 - PLACEHOLDER ART: starter map pieces (plain foam-coloured road, ramps, walls, arches, coins, spinners, pads, grass ground), finish confetti (default particle texture), Tracks UI glyphs (coin dot, star, cog, plain rounded panels), the ghost car (see-through copy of your car).
 - All sound ids in Config.Sounds are empty (now including Coin, Finish, Honk, StarEarned); sounds need picking from licence-checked free sets (nate's OK first). No music yet (the Music volume setting is ready).
-- Saved but not used yet: the "Fewer flashes" and "Effects" settings (the VFX pass reads them).
+- PLACEHOLDER ART: builder pieces (plain parts; the spec's lower part costs assume single-mesh prefabs from the art pass), the plot grid (SurfaceGui lines), tray labels instead of piece icons, the finish line checker (SurfaceGui squares), the placement outline (blue neon box). The Wobble Bot builder helper is not built yet (art pass).
+- New empty sound ids: BuilderPlace, BuilderRemove, Publish, PistonPush.
+- Saved but not used yet: the "Fewer flashes" and "Effects" settings (the VFX pass reads them); a builder map's Full damage flag (read when published maps are played, milestone 4).

@@ -1,5 +1,5 @@
 -- TracksHud: the Tracks screens on top of the driving HUD (spec: Screens and UI > Tracks screens).
---   Top bar: coins, stars and the next goal at the top left; MAPS and the settings cog beside RESET.
+--   Top bar: coins, stars and the next goal at the top left; MAPS, BUILD and the cog beside RESET.
 --   Run: the timer (top centre), checkpoints passed, and the split against your best at each checkpoint
 --   (green ahead, red behind).
 --   Cues: one big centre word that pulses (DRIVE, JUMP!, LEAN BACK!), and short toasts.
@@ -166,6 +166,7 @@ end
 
 export type Callbacks = {
 	onMaps: () -> (),
+	onBuild: () -> (),
 	onSettings: () -> (),
 }
 
@@ -274,7 +275,9 @@ function TracksHud.build(parentGui: ScreenGui, resetButton: GuiObject?, callback
 	row.Parent = buttonsFrame
 	local maps = squareButton(buttonsFrame, "Maps", "MAPS", 1)
 	maps.Activated:Connect(callbacks.onMaps)
-	local cog = squareButton(buttonsFrame, "Settings", "⚙", 2)
+	local build = squareButton(buttonsFrame, "Build", "BUILD", 2)
+	build.Activated:Connect(callbacks.onBuild)
+	local cog = squareButton(buttonsFrame, "Settings", "⚙", 3)
 	cog.Activated:Connect(callbacks.onSettings)
 	local function placeButtons()
 		if resetButton then
@@ -297,12 +300,10 @@ end
 
 export type Goal = { label: string, coins: number, stars: number? }
 
-function TracksHud.setVisible(visible: boolean)
-	if root then
-		root.Visible = visible
-	end
-	if not visible then
-		TracksHud.closePicker()
+function TracksHud.setButtonVisible(name: string, visible: boolean)
+	local b = buttonsFrame and buttonsFrame:FindFirstChild(name) :: GuiObject?
+	if b then
+		b.Visible = visible
 	end
 end
 

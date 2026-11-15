@@ -1286,6 +1286,7 @@ if placePath then
 				"ProfileClient",
 				"SettingsMenu",
 				"TracksClient",
+				"BuilderClient",
 			}
 		do
 			check(client ~= nil and client:FindFirstChild("Controllers"):FindFirstChild(name) ~= nil, name)
@@ -1296,12 +1297,15 @@ if placePath then
 		end
 		local ui = client and client:FindFirstChild("Ui")
 		check(ui ~= nil and ui:FindFirstChild("TracksHud") ~= nil, "Ui.TracksHud")
+		check(ui ~= nil and ui:FindFirstChild("BuilderHud") ~= nil, "Ui.BuilderHud")
 		local services = server and server:FindFirstChild("Services")
 		for _, name in
 			{
 				"CollisionGroups",
 				"DataService",
 				"EconomyService",
+				"BuilderService",
+				"MapService",
 				"TestTrack",
 				"TracksService",
 				"VehicleService",

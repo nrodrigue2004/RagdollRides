@@ -15,6 +15,7 @@
 local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
@@ -143,8 +144,9 @@ local function checkGates(
 		return nil, nil, "needRun", nil
 	end
 	local played = DataService.playSeconds(player)
-	if played < cfg.minPlaySeconds then
-		return nil, nil, "needPlayTime", math.ceil(cfg.minPlaySeconds - played)
+	local needed = if RunService:IsStudio() then cfg.studioPlaySeconds else cfg.minPlaySeconds
+	if played < needed then
+		return nil, nil, "needPlayTime", math.ceil(needed - played)
 	end
 	local linked = profile.maps.links[tostring(slot)]
 	if linked == nil and #profile.maps.published >= BuilderService.liveLimit(profile) then
@@ -168,7 +170,10 @@ local function publish(player: Player, slot: number, b: buffer)
 		return
 	end
 	local now = os.time()
-	local cooldownLeft = (profile.maps.lastPublish or 0) + Config.Builder.publishCooldown - now
+	local cooldown = if RunService:IsStudio()
+		then Config.Builder.studioCooldown
+		else Config.Builder.publishCooldown
+	local cooldownLeft = (profile.maps.lastPublish or 0) + cooldown - now
 	if cooldownLeft > 0 then
 		-- Publish when ready: keep it and send it when the cooldown ends (if nothing changed)
 		local first = queued[player] == nil

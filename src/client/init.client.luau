@@ -41,6 +41,7 @@ local ORDER = {
 	{ "Profile", "ProfileClient" },
 	{ "Settings", "SettingsMenu" },
 	{ "Tracks", "TracksClient" },
+	{ "Builder", "BuilderClient" },
 	{ "Dev", "DevPanel" },
 }
 

@@ -291,7 +291,18 @@ local function restart()
 		return
 	end
 	local start = MapSpace.startCFrame(current)
-	controllers.Vehicle.setCheckpoint(start, 0)
+	local fromIndex = 0
+	local practicePiece = if testKind == "practice" and practiceFrom > 0
+		then StarterMaps.find(current, "Checkpoint", practiceFrom)
+		else nil
+	if practicePiece then
+		-- A practice run starts again at its checkpoint, on the ground, facing along the road
+		start = CFrame.new(
+			MapSpace.point(current, practicePiece.x, practicePiece.y - practicePiece.sy / 2, practicePiece.z)
+		) * CFrame.Angles(0, math.rad(practicePiece.yaw), 0)
+		fromIndex = practiceFrom
+	end
+	controllers.Vehicle.setCheckpoint(start, fromIndex)
 	local vehicle = controllers.Vehicle.getState()
 	if controllers.Ragdoll.isRagdolled() then
 		controllers.Ragdoll.respawn()
@@ -509,7 +520,7 @@ local function update(dt: number)
 					if Movers.extending(hit.motion, now) and os.clock() - lastPush >= PUSH_COOLDOWN then
 						lastPush = os.clock()
 						controllers.Vehicle.applyKick(Movers.pushVelocity(hit, now))
-						controllers.Juice.fire("Bounce")
+						controllers.Juice.fire("PistonPush")
 					end
 				else
 					controllers.Vehicle.hazardHit(nil)
@@ -623,9 +634,16 @@ function TracksClient.getTest(): string?
 	return testKind
 end
 
--- Show or hide the Tracks HUD (the builder hides it while building)
-function TracksClient.setHudVisible(visible: boolean)
-	TracksHud.setVisible(visible)
+function TracksClient.toast(message: string)
+	TracksHud.toast(message)
+end
+
+-- RETRY: back to the start line (a practice run: its checkpoint), a fresh run
+TracksClient.retry = restart
+
+-- The builder's TEST: no map picker (BUILD goes back to building)
+function TracksClient.setBuilderButtons(testing: boolean)
+	TracksHud.setButtonVisible("Maps", not testing)
 end
 
 local function openPicker()
@@ -666,6 +684,11 @@ function TracksClient.start()
 	end
 	TracksHud.build(controllers.Hud.getGui(), controllers.Hud.getResetButton(), {
 		onMaps = openPicker,
+		onBuild = function()
+			if controllers.Builder then
+				controllers.Builder.onBuildButton()
+			end
+		end,
 		onSettings = function()
 			if controllers.Settings.isOpen() then
 				controllers.Settings.close()

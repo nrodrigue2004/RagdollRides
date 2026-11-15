@@ -8,7 +8,7 @@
 
 local Config = {}
 
-Config.Version = "0.3.0-m2"
+Config.Version = "0.4.0-m3"
 
 ---------------------------------------------------------------------------
 -- World
@@ -495,6 +495,10 @@ Config.Sounds = {
 	Finish = "",
 	Honk = "",
 	StarEarned = "",
+	BuilderPlace = "", -- click-snap
+	BuilderRemove = "",
+	Publish = "", -- fanfare
+	PistonPush = "",
 }
 
 Config.Juice = {
@@ -582,6 +586,9 @@ Config.Builder = {
 	publishCooldown = 600, -- 1 publish per 10 minutes
 	minFinishes = 1, -- before the first publish: 1 finished Tracks run
 	minPlaySeconds = 900, -- and 15 minutes of play
+	-- Studio only, so the gates can be tried in one sitting: 1 minute of play and a 1 minute cooldown
+	studioPlaySeconds = 60,
+	studioCooldown = 60,
 	boardResetChange = 0.1, -- a republish that moves the creator time over 10% resets the leaderboard
 	autosaveInterval = 30,
 	undoSteps = 50,

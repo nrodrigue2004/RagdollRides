@@ -19,9 +19,9 @@ Read this first. Keep it short. Quality comes first; efficiency never means lowe
 - `notes/Working Agreement.md`: how nate wants the work done.
 
 ## Code map
-- `src/shared` (ReplicatedStorage.Shared): `Config` (every tuning number, pure data), `Net` + `NetSchema` + `Remotes` (all remotes, schema checks, rate limits), pure maths and data (`VehicleMath`, `Damage`, `DamageModel`, `PoseCodec`, `ProfileSchema`, `TracksMath`, `GhostCodec`, `StarterMaps`), `MapSpace`, `VehicleBuilder`, `Util/`.
-- `src/server` (ServerScriptService.Server): `Services/` (DataService, EconomyService, TracksService, MapBuilder, VehicleService, TestTrack, CollisionGroups).
-- `src/client` (StarterPlayerScripts.Client): `Controllers/` (VehicleController, RagdollClient, CameraController, InputController, HudController, JuiceService, SurfaceEffects, RemoteVehicles, Debris, DamageController, CrashReplay, ProfileClient, SettingsMenu, TracksClient, DevPanel), `Fx/` (DamageVisuals, ExplosionFx, MeshDents, Confetti) and `Ui/` (TracksHud).
+- `src/shared` (ReplicatedStorage.Shared): `Config` (every tuning number, pure data), `Net` + `NetSchema` + `Remotes` (all remotes, schema checks, rate limits), pure maths and data (`VehicleMath`, `Damage`, `DamageModel`, `PoseCodec`, `ProfileSchema`, `TracksMath`, `GhostCodec`, `StarterMaps`, builder `PieceCatalog`, `MapCodec`, `MapRules`, `MapNames`), `MapSpace`, `MapBuilder` (maps to parts, server and builder preview), `Movers` (moving pieces), `VehicleBuilder`, `Util/`.
+- `src/server` (ServerScriptService.Server): `Services/` (DataService, EconomyService, TracksService, BuilderService, MapService, VehicleService, TestTrack, CollisionGroups).
+- `src/client` (StarterPlayerScripts.Client): `Controllers/` (VehicleController, RagdollClient, CameraController, InputController, HudController, JuiceService, SurfaceEffects, RemoteVehicles, Debris, DamageController, CrashReplay, ProfileClient, SettingsMenu, TracksClient, BuilderClient, DevPanel), `Fx/` (DamageVisuals, ExplosionFx, MeshDents, Confetti) and `Ui/` (TracksHud, BuilderHud).
 - Pure modules have no Roblox types so `tests/run.luau` can run them in Lune.
 
 ## Quality

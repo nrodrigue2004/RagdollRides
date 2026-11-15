@@ -17,7 +17,9 @@ A Roblox physics driving game: weighty cars, heavy crashes, a rider who gets thr
 - Keyboard: W/S gas and brake (S reverses when stopped), A/D steer, Space jump, Q/E lean in the air, Left Shift handbrake, R reset (or respawn after a crash), F flip.
 - Gamepad: RT gas, LT brake, left stick steer and lean, A jump, B handbrake, X reset or respawn, Y flip.
 - Phone: on-screen buttons. Tap anywhere while thrown to flail.
-- Top right: **MAPS** picks a starter map, the **cog** opens settings (button size, left-handed layout, steering help, shake, reduced motion, dents, volumes).
+- Top right: **MAPS** picks a starter map, **BUILD** opens the map builder, the **cog** opens settings (button size, left-handed layout, steering help, shake, reduced motion, dents, volumes).
+- Builder (phone): tap a piece in the tray, tap the plot to place it; tap a placed piece to select it, drag to move it; one finger orbits, two fingers pan and pinch. TEST drives the map (from a selected checkpoint it is a practice run), BUILD comes back. MAP names, tags and publishes it.
+- Builder (PC): number keys pick pieces (Shift for 11 to 20), R rotate, T tilt, F size, Q/E down and up, Delete, Ctrl+Z / Ctrl+Y, Esc deselects; right drag orbits, middle drag or WASD pans, the wheel zooms.
 
 ## Dev panel
 In Studio there is a **DEV** button on the left edge. It swaps vehicle class and runs the spec's feel and crash tests with PASS/FAIL and numbers (they take you to the test track first). **Pip's Hill** and **Test track** jump between them, and **Fresh save** makes you a first-time player again (to replay the onboarding). See `notes/Tasks.md` for the full Studio test list.

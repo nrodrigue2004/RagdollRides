@@ -204,6 +204,9 @@ local function onBuild(player: Player, slot: number)
 		return
 	end
 	if slot == 0 then
+		if building[player] == nil then
+			return
+		end
 		-- Leave the builder: back to the map the player was last on (their home map)
 		building[player] = nil
 		player:SetAttribute("BuildSlot", nil)

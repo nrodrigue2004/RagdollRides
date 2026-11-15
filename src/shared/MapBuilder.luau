@@ -225,7 +225,9 @@ BUILDERS.Checkpoint = function(model, map, piece, cf)
 	t:SetAttribute("Index", piece.index or 0)
 	t:SetAttribute("GroundOffset", piece.sy / 2)
 	CollectionService:AddTag(t, "Checkpoint")
-	arch(model, cf * CFrame.new(0, -piece.sy / 2, 0), piece.sx, 11, PALETTE.checkpoint, "CHECKPOINT")
+	-- Builder maps number their checkpoints (they count in placement order)
+	local title = if map.custom then "CHECKPOINT " .. tostring(piece.index or 0) else "CHECKPOINT"
+	arch(model, cf * CFrame.new(0, -piece.sy / 2, 0), piece.sx, 11, PALETTE.checkpoint, title)
 end
 
 BUILDERS.Finish = function(model, map, piece, cf)

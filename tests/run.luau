@@ -850,10 +850,21 @@ test("starter maps are complete and sane", function()
 	check(StarterMaps.nextMap("tumble_gulch") == "pips_hill", "wraps")
 end)
 
-test("tracks: official time and payout", function()
-	near(TracksMath.officialTime(20.1, 20.2, 0.25), 20.1, 1e-9, "driver's timer when close")
-	near(TracksMath.officialTime(19.5, 20.2, 0.25), 20.2, 1e-9, "server clock when too far off")
-	near(TracksMath.officialTime(0 / 0, 20.2, 0.25), 20.2, 1e-9, "NaN falls back to the server clock")
+test("tracks: speed window and payout", function()
+	-- 1 s window at top speed x 1.25 + the speed pad boost (100 -> 155 studs in 1 s)
+	local function steps(perStep)
+		local list = {}
+		for i = 1, 5 do
+			table.insert(list, { time = 10 + i * 0.25, distance = perStep })
+		end
+		return list
+	end
+	check(not TracksMath.windowTooFast(steps(30), 11.25, 100, 1.25, 30, 1), "120 studs/s is fine")
+	check(TracksMath.windowTooFast(steps(45), 11.25, 100, 1.25, 30, 1), "180 studs/s over 1 s is too fast")
+	check(
+		not TracksMath.windowTooFast({ { time = 11, distance = 90 } }, 11.25, 100, 1.25, 30, 1),
+		"short windows are not judged"
+	)
 	local base = {
 		timeSeconds = 21,
 		creatorSeconds = 20,

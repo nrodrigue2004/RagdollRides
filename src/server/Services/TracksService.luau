@@ -47,6 +47,7 @@ local playerMap: { [Player]: string } = {}
 local runs: { [Player]: Run } = {}
 local lastPositions: { [Player]: { position: Vector3, time: number } } = {}
 local speedFlags: { [Player]: number } = {}
+local speedHistory: { [Player]: { { time: number, distance: number } } } = {}
 local rejectTimes: { [Player]: { number } } = {}
 
 -- Starter maps always keep their ghost
@@ -165,6 +166,7 @@ local function onStart(player: Player, mapId: string)
 	if map == nil or playerMap[player] ~= mapId then
 		return
 	end
+	speedHistory[player] = nil
 	runs[player] = {
 		mapId = mapId,
 		startTime = os.clock(),
@@ -180,7 +182,7 @@ local function onStart(player: Player, mapId: string)
 	lastPositions[player] = nil
 	local profile = DataService.get(player)
 	if profile and not profile.tut.pipHill and mapId == StarterMaps.FIRST_MAP then
-		EconomyService.funnel(player, 2, "Drove off")
+		EconomyService.funnel(player, 2, "First throttle")
 	end
 end
 
@@ -199,8 +201,9 @@ local function onCheckpoint(player: Player, mapId: string, index: number, client
 	run.checkpoints[index] = os.clock()
 	run.splits[index] = math.floor(math.max(0, clientTime) * 1000 + 0.5)
 	local profile = DataService.get(player)
-	if profile and not profile.tut.pipHill and mapId == StarterMaps.FIRST_MAP then
-		EconomyService.funnel(player, 2 + index, "Checkpoint " .. index)
+	if profile and not profile.tut.pipHill and mapId == StarterMaps.FIRST_MAP and index == 1 then
+		-- Checkpoint 1 sits at the end of the ramp's landing zone: reaching it means the jump was made
+		EconomyService.funnel(player, 3, "Jump")
 	end
 end
 
@@ -238,7 +241,11 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 	if profile == nil then
 		return
 	end
-	local time = TracksMath.officialTime(clientTime, elapsed, Config.Tracks.clientTimeTolerance)
+	-- The server's clock decides (spec: client time is advisory); the client's is only logged when far off
+	local time = elapsed
+	if math.abs(clientTime - elapsed) > 1 then
+		warn(string.format("[Tracks] %s timer off by %.2f s on %s", player.Name, clientTime - elapsed, mapId))
+	end
 	local entry = profile.tracks[mapId]
 	local daily = profile.daily
 	local firstFinish = entry == nil
@@ -275,9 +282,9 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 	if map.tut and not profile.tut[map.tut] then
 		profile.tut[map.tut] = true
 		if map.tut == "pipHill" then
-			EconomyService.funnel(player, 5, "Finished Pip's Hill")
+			EconomyService.funnel(player, 4, "Finish Pip's Hill")
 		elseif map.tut == "lean" then
-			EconomyService.funnel(player, 6, "Finished Lean Ledge")
+			EconomyService.funnel(player, 5, "Second track")
 		end
 	end
 
@@ -309,7 +316,71 @@ local function onFinish(player: Player, mapId: string, clientTime: number, trail
 	})
 end
 
--- Speed check and ghost samples, from the server's own view of the car
+local function nearRespawn(mapId: string, position: Vector3): boolean
+	for _, point in respawnPoints[mapId] or {} do
+		if (position - point).Magnitude <= Config.Tracks.respawnAllowance then
+			return true
+		end
+	end
+	return false
+end
+
+-- One 4 Hz step of the car on the server.
+-- * Step faster than top speed x 1.4 + launch allowances (and not a reset to a respawn point): a speed or
+--   fly hack. The car goes back to its last checkpoint, the run stops counting, 5 flags a session kicks.
+-- * Ground covered over the last 1 s above top speed x 1.25 (+ the speed pad boost): a fake finish
+--   guard. The run stops counting.
+local function checkSpeed(player: Player, run: Run, from: Vector3, to: Vector3, dt: number, now: number)
+	local cfg = Config.Tracks
+	local vehicleId = player:GetAttribute("VehicleId")
+	local def = Config.Vehicles[vehicleId or ""] or Config.Vehicles[Config.DefaultVehicle]
+	local topSpeed = Config.Classes[def.class].topSpeed
+	local step = to - from
+	local history = speedHistory[player] or {}
+	speedHistory[player] = history
+	if nearRespawn(run.mapId, to) and step.Magnitude > topSpeed * dt then
+		table.clear(history) -- a reset, not driving
+		return
+	end
+	if TracksMath.tooFast(step.Magnitude, dt, topSpeed, cfg.speedLimitFactor, cfg.launchAllowance) then
+		run.speedFlags += 1
+		run.valid = false
+		run.reason = "speed check"
+		table.clear(history)
+		speedFlags[player] = (speedFlags[player] or 0) + 1
+		warn(string.format("[Tracks] %s speed flag (%.0f studs in %.2f s)", player.Name, step.Magnitude, dt))
+		Net.fire("Run.Reset", player)
+		if
+			speedFlags[player] >= cfg.speedFlagsToKick
+			and (not RunService:IsStudio() or Config.Net.kickInStudio)
+		then
+			player:Kick("Connection problem: your car moved too fast. Please rejoin!")
+		end
+		return
+	end
+	table.insert(history, { time = now, distance = Vector3.new(step.X, 0, step.Z).Magnitude })
+	while history[1] and now - history[1].time > cfg.windowSeconds + 0.5 do
+		table.remove(history, 1)
+	end
+	if
+		run.valid
+		and TracksMath.windowTooFast(
+			history,
+			now,
+			topSpeed,
+			cfg.windowFactor,
+			Config.Pads.speedPadBoost,
+			cfg.windowSeconds
+		)
+	then
+		run.speedFlags += 1
+		run.valid = false
+		run.reason = "speed check"
+		warn(string.format("[Tracks] %s too fast over 1 s on %s", player.Name, run.mapId))
+	end
+end
+
+-- Speed checks and ghost samples, from the server's own view of the car
 local function sampleRuns(dt: number)
 	local cfg = Config.Tracks
 	local now = os.clock()
@@ -321,51 +392,11 @@ local function sampleRuns(dt: number)
 		end
 		local position = chassis.Position
 
-		-- Speed check at 4 Hz
+		-- Speed checks at 4 Hz (spec: Anti-exploit)
 		local last = lastPositions[player]
 		if last == nil or now - last.time >= 1 / cfg.speedCheckRate then
-			if last and run.valid then
-				local distance = (position - last.position).Magnitude
-				local vehicleId = player:GetAttribute("VehicleId")
-				local def = Config.Vehicles[vehicleId or ""] or Config.Vehicles[Config.DefaultVehicle]
-				local topSpeed = Config.Classes[def.class].topSpeed
-				if
-					TracksMath.tooFast(
-						distance,
-						now - last.time,
-						topSpeed,
-						cfg.speedLimitFactor,
-						cfg.launchAllowance
-					)
-				then
-					local isReset = false
-					for _, point in respawnPoints[run.mapId] or {} do
-						if (position - point).Magnitude <= cfg.respawnAllowance then
-							isReset = true
-							break
-						end
-					end
-					if not isReset then
-						run.speedFlags += 1
-						run.valid = false
-						run.reason = "speed check"
-						speedFlags[player] = (speedFlags[player] or 0) + 1
-						warn(
-							string.format(
-								"[Tracks] %s speed flag (%.0f studs in %.2f s)",
-								player.Name,
-								distance,
-								now - last.time
-							)
-						)
-						if
-							speedFlags[player] >= cfg.speedFlagsToKick
-							and (not RunService:IsStudio() or Config.Net.kickInStudio)
-						then
-							player:Kick("Connection problem: your car moved too fast. Please rejoin!")
-						end
-					end
-				end
+			if last then
+				checkSpeed(player, run, last.position, position, now - last.time, now)
 			end
 			lastPositions[player] = { position = position, time = now }
 		end
@@ -396,7 +427,7 @@ local function onJoin(player: Player)
 		end
 		local mapId = homeMap(profile)
 		if profile and not profile.tut.pipHill then
-			EconomyService.funnel(player, 1, "Spawned on Pip's Hill")
+			EconomyService.funnel(player, 1, "Joined")
 		end
 		TracksService.enterMap(player, mapId)
 	end)
@@ -447,6 +478,7 @@ function TracksService.init()
 		runs[player] = nil
 		lastPositions[player] = nil
 		speedFlags[player] = nil
+		speedHistory[player] = nil
 		rejectTimes[player] = nil
 	end)
 

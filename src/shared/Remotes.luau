@@ -74,6 +74,7 @@ local Remotes: { [string]: RemoteDef } = {
 	},
 	["Run.Result"] = { dir = "S2C", since = "2" },
 	["Run.Ghost"] = { dir = "S2C", since = "2" }, -- mapId, base64 ghost or nil
+	["Run.Reset"] = { dir = "S2C", since = "2" }, -- the speed check put the car back to its last checkpoint
 	["Map.Go"] = { dir = "C2S", schema = { { t = "string", max = 40 } }, rate = 0.5, burst = 2, since = "2" },
 	["Profile.Data"] = { dir = "S2C", since = "2" }, -- the client's view of its own profile, on every change
 	["Notice"] = { dir = "S2C", since = "2" }, -- a preset message key (our text only, never player text)

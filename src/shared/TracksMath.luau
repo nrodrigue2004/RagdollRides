@@ -134,17 +134,32 @@ function TracksMath.split(currentMs: number, bestMs: number?): number?
 	return currentMs - bestMs
 end
 
--- The time that counts: the driver's own timer (so the result matches what they watched), unless it is
--- more than `tolerance` seconds off the server's clock for the same run, then the server's.
-function TracksMath.officialTime(clientTime: any, serverElapsed: number, tolerance: number): number
-	if
-		type(clientTime) == "number"
-		and clientTime == clientTime
-		and math.abs(clientTime - serverElapsed) <= tolerance
-	then
-		return clientTime
+-- The spec's fake-finish check: over any 1 s window the car never covered more ground than top speed x
+-- 1.25 (plus the speed pad boost). segments = { { time = server clock, distance = horizontal studs } },
+-- oldest first. Returns true if the latest window is too fast. Windows shorter than 0.9 s are not judged.
+function TracksMath.windowTooFast(
+	segments: { { time: number, distance: number } },
+	now: number,
+	topSpeed: number,
+	factor: number,
+	allowance: number,
+	window: number
+): boolean
+	local total = 0
+	local oldest = now
+	for i = #segments, 1, -1 do
+		local segment = segments[i]
+		if now - segment.time > window then
+			break
+		end
+		total += segment.distance
+		oldest = segment.time
 	end
-	return serverElapsed
+	local span = now - oldest
+	if span < window * 0.9 then
+		return false
+	end
+	return total > (topSpeed * factor + allowance) * span
 end
 
 export type PayoutInput = {

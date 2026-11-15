@@ -669,6 +669,11 @@ function TracksClient.start()
 		resultToken += 1
 		showResult(result)
 	end)
+	-- The server's speed check: back to the last checkpoint (the run no longer counts)
+	Net.listen("Run.Reset", function()
+		controllers.Vehicle.reset()
+		TracksHud.toast("Whoa, too fast! Back to the checkpoint.")
+	end)
 	Net.listen("Run.Ghost", function(mapId, ghost)
 		if type(mapId) ~= "string" then
 			return

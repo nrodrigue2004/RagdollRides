@@ -547,8 +547,12 @@ Config.Tracks = {
 	minTimeFactor = 0.6, -- a finish faster than creator time x 0.6 (floor 5 s) is rejected
 	minTimeFloor = 5,
 	speedCheckRate = 4, -- server position samples per second
+	-- Speed and fly hacks: any 4 Hz step faster than this resets the car to its last checkpoint and flags
 	speedLimitFactor = 1.4, -- max speed x 1.4 plus launch allowances
 	launchAllowance = 90, -- studs/s added for bouncers, speed pads and falls
+	-- Fake finish: over any 1 s window, ground covered (horizontal) above top speed x 1.25 rejects the run
+	windowFactor = 1.25,
+	windowSeconds = 1,
 	speedFlagsToKick = 5,
 	rejectsForBoardBan = 3, -- 3 rejects in 10 minutes = no leaderboard posts for the day
 	ghostRate = 5, -- ghost samples per second
@@ -560,7 +564,6 @@ Config.Tracks = {
 	jumpCueLead = 1, -- JUMP pulses this long before the lip
 	firstTracksAssist = "High", -- steering assist forced for the first 2 tracks
 	trailCoinValue = 1, -- each trail coin is worth this at the finish, up to the map's coin count
-	clientTimeTolerance = 0.25, -- the driver's timer counts if it is within this of the server's clock
 	reportDistance = 80, -- a checkpoint or finish report counts only with the car this close (studs)
 	respawnAllowance = 25, -- a jump that lands this close to a respawn point is a reset, not speed
 	pipHillCoins = 100,

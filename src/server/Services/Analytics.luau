@@ -125,7 +125,7 @@ local function onClient(player: Player, name: string, value: number, a: string, 
 	if name == "crash_huge" then
 		Analytics.event(player, "crash_huge", math.floor(value), mode(), a)
 	elseif name == "perf_sample" then
-		-- value: average fps; a: "1% low fps, memory MB"; b: "graphics preset, device class"
+		-- value: average fps; a: "low fps / memory MB"; b: "graphics preset / device class"
 		Analytics.event(player, "perf_sample", math.floor(value), a, b, mode())
 	elseif name == "clip_share" then
 		Analytics.event(player, "clip_share", 1, mode(), a)

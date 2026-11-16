@@ -83,8 +83,8 @@ function Telemetry.start()
 		Telemetry.send(
 			"perf_sample",
 			math.floor(average + 0.5),
-			string.format("low %d, %d MB", math.floor(1 / math.max(worst, 1e-3) + 0.5), memory),
-			string.format("%s, %s", tostring(graphics), deviceClass())
+			string.format("low %d / %d MB", math.floor(1 / math.max(worst, 1e-3) + 0.5), memory),
+			string.format("%s / %s", tostring(graphics), deviceClass())
 		)
 		table.clear(frames)
 		elapsed = 0

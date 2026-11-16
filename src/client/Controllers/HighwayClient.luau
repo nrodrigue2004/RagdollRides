@@ -377,6 +377,7 @@ end
 
 local boom: () -> ()
 local lastImpact: { [string]: any }? = nil -- for the Studio log of why a ride ended
+local lastImpactRideStart: number? = nil
 
 -- The ride is over: Wreck Mode starts here at once (the server confirms with "wreckStart")
 local function crash(why: string)
@@ -392,10 +393,29 @@ local function crash(why: string)
 				why,
 				math.floor(r.meters),
 				if i
-					then string.format("I %.0f %s %s", i.impact, tostring(i.tier), tostring(i.side))
+					then string.format(
+						"I %.0f %s %s with %s, closing %.0f, %.1f s into the ride",
+						i.impact,
+						tostring(i.tier),
+						tostring(i.side),
+						if i.other then (i.other :: Instance):GetFullName() else "nothing",
+						i.closingSpeed or 0,
+						os.clock() - (lastImpactRideStart or os.clock())
+					)
 					else "none"
 			)
 		)
+		local chassis = myChassis()
+		if chassis then
+			print(
+				string.format(
+					"[Highway] car at %s, velocity %s, up %s",
+					tostring(chassis.Position),
+					tostring(chassis.AssemblyLinearVelocity),
+					tostring(chassis.CFrame.UpVector)
+				)
+			)
+		end
 	end
 	r.phase = "wreck"
 	r.wreckEndsAt = now() + cfg.ride.wreckLength
@@ -722,6 +742,10 @@ local function onSpawned(model: Model)
 	local cf = laneFrame(r, r.s0, r.lane) + Vector3.new(0, controllers.Vehicle.rideHeight() + 0.3, 0)
 	controllers.Vehicle.placeAt(cf, cf.LookVector * cfg.startSpeed)
 	controllers.Vehicle.setCheckpoint(laneFrame(r, r.s0, r.lane), 0)
+	lastImpactRideStart = os.clock()
+	if RunService:IsStudio() then
+		print(string.format("[Highway] spawned at %s, lane %d, s %.0f", tostring(cf.Position), r.lane, r.s0))
+	end
 	if r.traffic == nil then
 		makeTraffic(r, chassis)
 	end

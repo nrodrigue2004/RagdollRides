@@ -690,7 +690,7 @@ local function finishRun(player: Player, reason: string)
 	pcall(function()
 		game:GetService("AnalyticsService"):LogCustomEvent(player, "highway_run", s.score, {
 			[Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = string.format(
-				"%d m, bones %d, x%d, pileups %d",
+				"%d m / bones %d / x%d / pileups %d",
 				meters,
 				s.breaks,
 				s.bestMultiplier,

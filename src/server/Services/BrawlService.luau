@@ -867,7 +867,7 @@ function mode.finish(r)
 				[Enum.AnalyticsCustomFieldKeys.CustomField01.Name] = tostring(e.kos),
 				[Enum.AnalyticsCustomFieldKeys.CustomField02.Name] = if ranked then "ranked" else "casual",
 				[Enum.AnalyticsCustomFieldKeys.CustomField03.Name] = string.format(
-					"bots %d, %ds",
+					"bots %d / %ds",
 					d.botCount or 0,
 					math.floor(duration)
 				),

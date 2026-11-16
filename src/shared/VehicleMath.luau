@@ -180,4 +180,109 @@ function VehicleMath.simulateTimeToTop(
 	return t
 end
 
+-- Suspension damping as impulses that work together. Each grounded corner asks for a change dv[i] in its
+-- vertical speed; a car is one rigid body, so an impulse at one corner also moves the others through roll
+-- and pitch. Applied corner by corner (each as if it were a quarter of the mass), a roll or pitch change
+-- overshoots by about mass * x^2 / inertia, 3x for these boxes, and the car shook itself over at low fps.
+-- This solves for the impulses (along the chassis up, at mounts x[i] right and z[i] back of the centre of
+-- mass) whose combined effect gives each corner its change; what a rigid body can't do (one diagonal
+-- against the other) is left out. Returns one impulse per corner.
+function VehicleMath.dampingImpulses(
+	x: { number },
+	z: { number },
+	dv: { number },
+	mass: number,
+	rollInertia: number,
+	pitchInertia: number
+): { number }
+	local n = #dv
+	if n == 0 then
+		return {}
+	end
+	-- K[i][j]: corner i's speed change per unit (impulse / mass) at corner j
+	local k = {}
+	for i = 1, n do
+		k[i] = {}
+		for j = 1, n do
+			k[i][j] = 1 + mass * x[i] * x[j] / rollInertia + mass * z[i] * z[j] / pitchInertia
+		end
+	end
+	-- Ridge least squares: (K K + mu I) u = K dv
+	local a = {}
+	local b = {}
+	local mu = 1e-4
+	for i = 1, n do
+		a[i] = {}
+		local rhs = 0
+		for j = 1, n do
+			local sum = 0
+			for m = 1, n do
+				sum += k[i][m] * k[m][j]
+			end
+			a[i][j] = sum + (if i == j then mu else 0)
+			rhs += k[i][j] * dv[j]
+		end
+		b[i] = rhs
+	end
+	-- Gaussian elimination with partial pivoting
+	for col = 1, n do
+		local pivot = col
+		for row = col + 1, n do
+			if math.abs(a[row][col]) > math.abs(a[pivot][col]) then
+				pivot = row
+			end
+		end
+		a[col], a[pivot] = a[pivot], a[col]
+		b[col], b[pivot] = b[pivot], b[col]
+		local d = a[col][col]
+		if math.abs(d) < 1e-12 then
+			continue
+		end
+		for row = col + 1, n do
+			local f = a[row][col] / d
+			if f ~= 0 then
+				for c = col, n do
+					a[row][c] -= f * a[col][c]
+				end
+				b[row] -= f * b[col]
+			end
+		end
+	end
+	local u = table.create(n, 0)
+	for row = n, 1, -1 do
+		local sum = b[row]
+		for c = row + 1, n do
+			sum -= a[row][c] * u[c]
+		end
+		local d = a[row][row]
+		u[row] = if math.abs(d) < 1e-12 then 0 else sum / d
+	end
+	local impulses = table.create(n, 0)
+	for i = 1, n do
+		impulses[i] = u[i] * mass
+	end
+	return impulses
+end
+
+-- How much more a roll or pitch change at the corners moves them than the same force on a quarter of the
+-- mass would (1 = no more). Spring step guards divide by it.
+function VehicleMath.cornerAmplification(
+	x: { number },
+	z: { number },
+	mass: number,
+	rollInertia: number,
+	pitchInertia: number
+): number
+	local n = #x
+	if n == 0 then
+		return 1
+	end
+	local xx, zz = 0, 0
+	for i = 1, n do
+		xx += x[i] * x[i]
+		zz += z[i] * z[i]
+	end
+	return math.max(1, mass * xx / n / rollInertia, mass * zz / n / pitchInertia)
+end
+
 return VehicleMath

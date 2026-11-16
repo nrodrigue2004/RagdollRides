@@ -252,6 +252,143 @@ test("20-stud drop settles (predicted, 60 fps and 30 fps)", function()
 	end
 end)
 
+test("damping impulses work together on the rigid body", function()
+	local mass, iRoll, iPitch = 100, 230, 555
+	local x = { -2.9, 2.9, -2.9, 2.9 }
+	local z = { -2.9, -2.9, 2.7, 2.7 }
+	local function result(impulses: { number }, xs: { number }, zs: { number }): { number }
+		local p, lr, lp = 0, 0, 0
+		for i, j in impulses do
+			p += j
+			lr += j * xs[i]
+			lp += j * zs[i]
+		end
+		local out = {}
+		for i in impulses do
+			out[i] = p / mass + lr / iRoll * xs[i] + lp / iPitch * zs[i]
+		end
+		return out
+	end
+	for name, dv in
+		{
+			heave = { 1, 1, 1, 1 },
+			roll = { -1, 1, -1, 1 },
+			pitch = { 1, 1, -1, -1 },
+			mixed = { 2, 0.5, 1.5, 0 },
+		}
+	do
+		local got = result(VehicleMath.dampingImpulses(x, z, dv, mass, iRoll, iPitch), x, z)
+		if name ~= "mixed" then
+			for i = 1, 4 do
+				near(got[i], dv[i], 1e-3, name .. " corner " .. i .. " gets its change")
+			end
+		end
+		for i = 1, 4 do
+			check(
+				math.abs(got[i]) <= math.abs(dv[i]) + 0.75,
+				name .. " corner " .. i .. " never overshoots far"
+			)
+		end
+	end
+	local heave = VehicleMath.dampingImpulses(x, z, { 1, 1, 1, 1 }, mass, iRoll, iPitch)
+	near(heave[1] + heave[2] + heave[3] + heave[4], mass, 0.05, "heave moves the whole mass, as before")
+	local one = result(
+		VehicleMath.dampingImpulses({ 2.9 }, { -2.9 }, { 1 }, mass, iRoll, iPitch),
+		{ 2.9 },
+		{ -2.9 }
+	)
+	near(one[1], 1, 1e-3, "a single corner gets exactly its change")
+	check(#VehicleMath.dampingImpulses({}, {}, {}, mass, iRoll, iPitch) == 0, "no corners, no impulses")
+end)
+
+-- A car rolling on flat ground (heave, roll and pitch, 4 corners, forces once per frame, 240 Hz physics):
+-- it must settle, never shake itself over, at phone frame rates too.
+local function rollSim(class, frameRate: number, perCorner: boolean): number
+	local g = Config.World.gravity
+	local drive = Config.Driving
+	local mass = class.relativeMass * drive.baseMass
+	local corner = mass / 4
+	local sx, sy, sz = table.unpack(class.colliderSize)
+	local iPitch, _, iRoll = VehicleMath.boxInertia(mass, sx, sy, sz)
+	local x = { -class.halfTrack, class.halfTrack, -class.halfTrack, class.halfTrack }
+	local z = { class.frontAxleZ, class.frontAxleZ, class.rearAxleZ, class.rearAxleZ }
+	local amp = if perCorner then 1 else VehicleMath.cornerAmplification(x, z, mass, iRoll, iPitch)
+	local k, c = VehicleMath.springCoefficients(corner, class.springFrequency, class.dampingRatio)
+	local dt = 1 / frameRate
+	local springLimit = corner / amp * (1.6 / dt) ^ 2
+	local params = {
+		k = math.min(k, springLimit),
+		c = c,
+		bumpK = math.min(k * drive.bumpStopStiffnessMultiplier, springLimit),
+		bumpDampingMultiplier = drive.bumpStopDampingMultiplier,
+		cornerMass = corner,
+		travel = class.suspensionTravel,
+		radius = class.wheelRadius,
+		progressiveSpeed = drive.progressiveDampingSpeed,
+		reboundMultiplier = drive.reboundDampingMultiplier,
+	}
+	local sag = g / (2 * math.pi * class.springFrequency) ^ 2
+	local h = class.suspensionTravel - sag + class.wheelRadius
+	local vh, roll, wr, pitch, wp = 0, 0, 3, 0, 0
+	local substeps = math.max(1, math.floor(240 / frameRate))
+	local worst = 0
+	for frame = 1, math.floor(3 * frameRate) do
+		local forces, dvs = {}, {}
+		for i = 1, 4 do
+			local y = h + roll * x[i] + pitch * z[i]
+			local v = vh + wr * x[i] + wp * z[i]
+			local spring, deltaV = VehicleMath.suspensionStep(params, y, -v, dt)
+			forces[i], dvs[i] = spring, deltaV
+		end
+		local impulses = if perCorner
+			then { dvs[1] * corner, dvs[2] * corner, dvs[3] * corner, dvs[4] * corner }
+			else VehicleMath.dampingImpulses(x, z, dvs, mass, iRoll, iPitch)
+		for i = 1, 4 do
+			vh += impulses[i] / mass
+			wr += impulses[i] * x[i] / iRoll
+			wp += impulses[i] * z[i] / iPitch
+		end
+		local f, tr, tp = 0, 0, 0
+		for i = 1, 4 do
+			f += forces[i]
+			tr += forces[i] * x[i]
+			tp += forces[i] * z[i]
+		end
+		for _ = 1, substeps do
+			local step = dt / substeps
+			vh += (f / mass - g) * step
+			wr += tr / iRoll * step
+			wp += tp / iPitch * step
+			h += vh * step
+			roll += wr * step
+			pitch += wp * step
+		end
+		if frame > frameRate then
+			worst = math.max(worst, math.abs(wr))
+		end
+	end
+	return worst
+end
+
+test("a rolling car settles at 20, 30 and 60 fps (no shaking itself over)", function()
+	for id, class in Config.Classes do
+		for _, fps in { 60, 30, 20 } do
+			local worst = rollSim(class, fps, false)
+			local old = rollSim(class, fps, true)
+			print(
+				string.format(
+					"    roll %-5s @%d fps: roll rate after 1 s %.3f rad/s (corner by corner: %.3g)",
+					id,
+					fps,
+					worst,
+					old
+				)
+			)
+			check(worst < 0.05, id .. " roll settles within 1 s at " .. fps .. " fps")
+		end
+	end
+end)
+
 test("ride height leaves the chassis belly clear of the ground", function()
 	for id, class in Config.Classes do
 		local sag = Config.World.gravity / (2 * math.pi * class.springFrequency) ^ 2

@@ -219,6 +219,7 @@ local function setup(model: Model)
 		k = k,
 		c = c,
 		inertia = Vector3.new(ix, iy, iz),
+		amplification = 1,
 		a0 = VehicleMath.baseAcceleration(
 			class.topSpeed,
 			class.timeToTop,
@@ -275,12 +276,20 @@ local function setup(model: Model)
 			normal = Vector3.yAxis,
 			material = Enum.Material.Plastic,
 			lateralSlip = 0,
+			deltaV = 0,
 			spin = 0,
 			visualExtension = class.suspensionTravel,
 			index = index,
 			lost = false,
 			axleDrag = false,
 		})
+	end
+	do
+		local xs, zs = {}, {}
+		for i, w in s.wheels do
+			xs[i], zs[i] = w.mount.X, w.mount.Z
+		end
+		s.amplification = VehicleMath.cornerAmplification(xs, zs, mass, iz, ix)
 	end
 
 	local center = chassis:WaitForChild("Center") :: Attachment
@@ -413,7 +422,8 @@ local function step(dt: number)
 
 	-- Step-size guards: the explicit spring and tyre forces must not overshoot in one frame at low fps.
 	-- (The damper is an exponential velocity change, stable at any frame rate.)
-	local springLimit = cornerMass * (1.6 / dt) ^ 2
+	-- Roll and pitch move a corner more than heave does (s.amplification), so the guard allows for it.
+	local springLimit = cornerMass / s.amplification * (1.6 / dt) ^ 2
 	local suspension: VehicleMath.SuspensionParams = {
 		k = math.min(s.k, springLimit),
 		c = s.c,
@@ -434,6 +444,7 @@ local function step(dt: number)
 	local drivenGrounded = 0
 	local normalSum = Vector3.zero
 	local dampingImpulse = Vector3.zero
+	local damped: { any } = {}
 	local handling = s.handling
 	for _, w in s.wheels do
 		local mountWorld = cf:PointToWorldSpace(w.mount)
@@ -460,10 +471,9 @@ local function step(dt: number)
 			spring, deltaV, touching, compression, overshoot =
 				VehicleMath.suspensionStep(suspension, result.Distance, compressionSpeed, dt)
 		end
-		if deltaV ~= 0 then
-			local impulse = up * (deltaV * cornerMass)
-			chassis:ApplyImpulseAtPosition(impulse, mountWorld)
-			dampingImpulse += impulse
+		if result and (touching or deltaV ~= 0) then
+			w.deltaV = deltaV
+			table.insert(damped, w)
 		end
 		if touching and result then
 			w.compression = compression
@@ -486,6 +496,28 @@ local function step(dt: number)
 			w.load = 0
 			w.grounded = false
 			w.lateralSlip = 0
+		end
+	end
+	-- The dampers' speed changes, solved together for the rigid body (VehicleMath.dampingImpulses)
+	if #damped > 0 then
+		local xs, zs, dvs = {}, {}, {}
+		local comLocal = cf:PointToObjectSpace(com)
+		local any = false
+		for i, w in damped do
+			local p = w.mount - comLocal
+			xs[i], zs[i], dvs[i] = p.X, p.Z, w.deltaV
+			any = any or w.deltaV ~= 0
+		end
+		if any then
+			local inertia = s.inertia
+			local impulses = VehicleMath.dampingImpulses(xs, zs, dvs, mass, inertia.Z, inertia.X)
+			for i, w in damped do
+				if impulses[i] ~= 0 then
+					local impulse = up * impulses[i]
+					chassis:ApplyImpulseAtPosition(impulse, cf:PointToWorldSpace(w.mount))
+					dampingImpulse += impulse
+				end
+			end
 		end
 	end
 	s.scriptedDeltaV += dampingImpulse / mass
@@ -606,7 +638,9 @@ local function step(dt: number)
 		local groundN = s.groundNormal
 		local rollAngle = math.asin(math.clamp(right:Dot(groundN), -1, 1))
 		local rollRate = angular:Dot(look)
-		alpha += look * (rollAssist * (drive.antiRollStiffness * rollAngle - drive.antiRollDamping * rollRate))
+		-- (the damping never takes more than half the roll rate in one frame)
+		local rollDamping = math.min(rollAssist * drive.antiRollDamping, 0.5 / dt)
+		alpha += look * (rollAssist * drive.antiRollStiffness * rollAngle - rollDamping * rollRate)
 		-- Yaw damping: remove part of the yaw rate the steering does not explain
 		local yawRate = angular:Dot(up)
 		local expectedYaw = -VehicleMath.expectedYawRate(forwardSpeed, steerAngle, s.wheelbase)

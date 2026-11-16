@@ -155,7 +155,7 @@ Milestone 8 (Highway Havoc). Build with `rojo build highway.project.json -o Sunn
 Playtest 1 fixes (2026-11-15):
 - [ ] Highway ride: hands off, the car holds its lane through curves; a tap moves exactly one lane, holding keeps changing lanes, it never leaves the road, and it stays flat. Does a lane change feel quick enough (about 1 s)? A flipped or stuck car goes to Wreck Mode within about 2 s.
 - [ ] Tracks: crash hard several times without RESET; the car still drives exactly like the first run (dents and torn panels still show).
-- [ ] Driving feels smooth at 60 fps: the camera no longer jitters with the suspension. What fps does Shift+F5 show during a choppy moment?
+- [ ] Driving feels smooth at 60 fps and on a phone: the suspension fix (2026-11-16) removed a body shake that grew at low fps. Is the choppy feel gone?
 - [ ] Respawn: RESPAWN shows after 1.6 s, Pip's Hill and Highway respawn by themselves after 2 s. About right now?
 - [ ] Paint a car in the garage, crash it, then repair: no flicker of the old paint at any point.
 - [ ] Lighting: shadows, haze, bloom and sun rays look better? Settings → Effects Low turns bloom, sun rays and the grade off.

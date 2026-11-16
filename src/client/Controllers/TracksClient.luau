@@ -203,6 +203,7 @@ end
 local function resetRun()
 	resultToken += 1
 	runState = if map then "ready" else "idle"
+	controllers.Input.setHold(false)
 	reached = if testKind == "practice" then practiceFrom else 0
 	coinCount = 0
 	coinStreak = 0
@@ -265,6 +266,7 @@ local function startRun()
 		return -- a quick race starts at GO (TracksClient.startRace)
 	end
 	runState = "running"
+	controllers.Input.setHold(false)
 	startClock = os.clock()
 	if testKind ~= "practice" then
 		Net.send("Run.Start", current.id)
@@ -420,6 +422,8 @@ local function finishRun(finishPart: BasePart)
 		return
 	end
 	runState = "finished"
+	-- Past the line the car brakes to a stop (steering still works), so it never runs off the end
+	controllers.Input.setHold(true)
 	finishTime = elapsed()
 	TracksHud.setTimer(finishTime)
 	controllers.Juice.fire("Finish")
@@ -704,6 +708,7 @@ function TracksClient.startRace(goAt: number)
 		return
 	end
 	runState = "running"
+	controllers.Input.setHold(false)
 	startClock = os.clock() - math.max(0, workspace:GetServerTimeNow() - goAt)
 	TracksHud.hideCue()
 end

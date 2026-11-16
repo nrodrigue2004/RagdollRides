@@ -270,7 +270,7 @@ local function pipsHill(): { Piece }
 	p.straight(160)
 	-- 0:28 finish arch, confetti
 	p.finish()
-	p.straight(40)
+	p.straight(120) -- run-out: room to brake to a stop at full speed
 	return pieces
 end
 

@@ -1,4 +1,4 @@
-# Current Progress (2026-11-15)
+# Current Progress (2026-11-16)
 
 ## Done
 - Milestones 1, 1b and 2 code: driving feel, crashes and damage; the core loop (saves, coins and stars, 5 starter maps, server-timed runs, ghosts, results, settings, onboarding, funnel).
@@ -7,7 +7,9 @@
 - Milestones 7 and 8 code: Bumper Brawl (Cinder Cove casual and ranked) and Highway Havoc (Sunny Pass co-op and versus).
 - Milestone 9 code: analytics and funnels, audio mix, the rest of the juice table, Highway Clip and Beat my score, Wobble Bot loading screen, emote wheel. Version 1.0.0-m9.
 - Playtest 1 fixes (2026-11-15): Tracks damage is looks only, smoother camera, slower respawn, all modes open, paint flicker fixed, lighting pass. Highway Havoc redesigned as Ride then Wreck (distance ride that gets harder, then 10 s of Wreck Mode with BOOM).
-- Tests pass (6,477), Selene clean, the 5 places build. Pushed to GitHub on branch claude/project-thread-p3wmkm (2026-11-15); the bundle and place files are also in project files.
+- Studio rounds 4 to 9 on nate's PC (2026-11-16): fixed cars shaking themselves over (dampers solved for the rigid body, softer roll/pitch springs, grip as an impulse); Highway lane-based steering; stuck/flipped rides end fast; no stale boom or double placement; Tracks brakes after the finish.
+- Tests pass (6,745), Selene clean, the 5 places build. Pushed to GitHub on branch claude/project-thread-p3wmkm; the bundle and place files are also in project files.
+- PAUSED 2026-11-16 (nate: Capeline first). Resume with nate's hand playtest of the Tasks.md Studio list.
 
 ## In progress
 - nate's Studio checks for milestones 1 to 9 and the playtest 1 fixes (Tasks.md "Studio test list"); the Highway checks are rewritten for Ride then Wreck.

@@ -2026,6 +2026,19 @@ test("highway: Ride then Wreck (traffic thickens, distance points)", function()
 		local b = HighwayMath.car(road, id, 560, cfg.traffic, opts)
 		check((a == nil) == (b == nil), "slots keep their car through the ride")
 	end
+	-- A ride never begins inside a car: the start steps forward until its lane is clear
+	for k = 1, 200 do
+		local t0 = k * 7.3
+		local start = HighwayMath.clearStart(road, 0, 2, t0, cfg.traffic, d, nil, nil, cfg.ride.startGap)
+		local o = HighwayMath.runOpts(nil, nil, start, t0, d)
+		for _, c in HighwayMath.carsBetween(road, start - 40, start + 40, t0, cfg.traffic, o) do
+			check(
+				not (c.lane == 2 and math.abs(c.s - start) < cfg.ride.startGap)
+					and not (math.abs(c.lane - 2) == 1 and math.abs(c.s - start) < 8),
+				"the start lane is clear"
+			)
+		end
+	end
 	local tutorial = HighwayMath.runOpts(nil, cfg.tutorial.quiet, 0, 0, d)
 	check(tutorial.quiet == cfg.tutorial.quiet and tutorial.ramp ~= nil, "tutorial keeps its quiet road")
 	-- Speed tiers and distance points

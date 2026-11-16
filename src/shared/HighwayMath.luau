@@ -453,6 +453,39 @@ function HighwayMath.startS(others: { number }, behind: number, maxS: number): n
 	return last - behind
 end
 
+-- A start spot with no car in your lane within `gap` studs and none right beside you (a ride must never
+-- begin inside a car): steps forward a gap at a time. The ride's density ramp depends on the start, so
+-- each try builds its own options.
+function HighwayMath.clearStart(
+	road: Road,
+	s0: number,
+	lane: number,
+	t0: number,
+	cfg: TrafficConfig,
+	density: { start: number, finish: number, over: number },
+	event: EventDef?,
+	quiet: number?,
+	gap: number
+): number
+	local s = s0
+	for _ = 1, 40 do
+		local opts = HighwayMath.runOpts(event, quiet, s, t0, density)
+		local blocked = false
+		for _, c in HighwayMath.carsBetween(road, s - gap, s + gap, t0, cfg, opts) do
+			local d = math.abs(c.s - s)
+			if (c.lane == lane and d < gap) or (math.abs(c.lane - lane) == 1 and d < 8) then
+				blocked = true
+				break
+			end
+		end
+		if not blocked then
+			return s
+		end
+		s += gap
+	end
+	return s
+end
+
 -- The traffic options for one ride: the day's event (or the tutorial's quiet road) and the ramp that
 -- thickens traffic from where the ride began. The server and the device build the same table.
 function HighwayMath.runOpts(

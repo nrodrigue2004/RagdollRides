@@ -226,9 +226,19 @@ local function startRun(player: Player)
 	end
 	local tutorial = not profile.tut.highway and not versus
 	local r = if tutorial then tutorialRoad(player) else road
-	local s0 = if tutorial then 0 else HighwayMath.startS(packS(player), cfg.packBehind, cfg.road.maxS)
 	local lane = if tutorial then 1 else 2
 	local t = now()
+	local s0 = HighwayMath.clearStart(
+		r,
+		if tutorial then 0 else HighwayMath.startS(packS(player), cfg.packBehind, cfg.road.maxS),
+		lane,
+		t - epoch,
+		cfg.traffic,
+		cfg.ride.density,
+		if tutorial then nil else event,
+		if tutorial then cfg.tutorial.quiet else nil,
+		cfg.ride.startGap
+	)
 	local length = if tutorial then cfg.tutorial.length else cfg.runLength
 	nextRunId += 1
 	local opts = HighwayMath.runOpts(

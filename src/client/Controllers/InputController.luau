@@ -38,11 +38,10 @@ local override: Snapshot? = nil
 -- Studio only: Workspace attributes TestThrottle and TestSteer (-1 to 1) drive the car, so an automated
 -- Studio test can drive without a keyboard. Ignored in live servers.
 local STUDIO = game:GetService("RunService"):IsStudio()
--- A mode's hands-off steering help (Highway: follow the road and settle into a lane), used only while the
--- player is not steering. -1 to 1.
-local assistSteer = 0
--- A mode's steering strength (Highway rides: gentler, so a tap is one lane change at speed). 1 = normal.
-local steerScale = 1
+-- A mode's steering filter (Highway rides: steering picks a lane and the car drives itself into it).
+-- Called with the player's raw intent (-1 to 1, before the keyboard ramp) and the normal steer; returns
+-- the steer to use.
+local steerFilter: ((intent: number, steer: number) -> number)? = nil
 local rampedSteer = 0
 local lastDevice = "keyboard"
 
@@ -89,12 +88,8 @@ function InputController.tap(action: string)
 	press(action)
 end
 
-function InputController.setSteerScale(scale: number)
-	steerScale = math.clamp(scale, 0.1, 1)
-end
-
-function InputController.setAssistSteer(value: number)
-	assistSteer = math.clamp(value, -1, 1)
+function InputController.setSteerFilter(fn: ((intent: number, steer: number) -> number)?)
+	steerFilter = fn
 end
 
 function InputController.setOverride(snapshot: Snapshot?)
@@ -151,16 +146,18 @@ function InputController.read(dt: number): Snapshot
 	local steer: number
 	local analog = false
 	local stick = deadzone(pad.stickX)
+	local intent = digitalSteer
 	if stick ~= 0 and digitalSteer == 0 then
-		steer = stick * steerScale
+		steer = stick
 		rampedSteer = stick
 		analog = true
+		intent = stick
 	else
 		rampedSteer = VehicleMath.rampInput(rampedSteer, digitalSteer, Config.Driving.steerRampTime, dt)
-		steer = rampedSteer * steerScale
-		if digitalSteer == 0 and assistSteer ~= 0 then
-			steer = math.clamp(steer + assistSteer, -1, 1)
-		end
+		steer = rampedSteer
+	end
+	if steerFilter then
+		steer = steerFilter(math.clamp(intent, -1, 1), steer)
 	end
 
 	local lean = 0

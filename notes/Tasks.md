@@ -153,7 +153,7 @@ Milestone 8 (Highway Havoc). Build with `rojo build highway.project.json -o Sunn
 - [ ] Live (after nate creates the Sunny Pass places, max 8 players, and pastes ids into Config.Places highwayCoop and highwayVersus): the hub card plays, the Versus chip unlocks after 2 runs, a party goes together, live counts show players in Highway.
 
 Playtest 1 fixes (2026-11-15):
-- [ ] Highway ride: with hands off the car holds its lane through curves; a short tap moves exactly one lane; a flipped or stuck car goes to Wreck Mode within about 2 s.
+- [ ] Highway ride: hands off, the car holds its lane through curves; a tap moves exactly one lane, holding keeps changing lanes, it never leaves the road, and it stays flat. Does a lane change feel quick enough (about 1 s)? A flipped or stuck car goes to Wreck Mode within about 2 s.
 - [ ] Tracks: crash hard several times without RESET; the car still drives exactly like the first run (dents and torn panels still show).
 - [ ] Driving feels smooth at 60 fps: the camera no longer jitters with the suspension. What fps does Shift+F5 show during a choppy moment?
 - [ ] Respawn: RESPAWN shows after 1.6 s, Pip's Hill and Highway respawn by themselves after 2 s. About right now?

@@ -1080,14 +1080,18 @@ Config.Highway = {
 		startGap = 30, -- studs of clear lane ahead and behind where a ride begins (never inside a car)
 		-- Hands-off steering help during the ride (only while you are not steering): turn toward the road's
 		-- heading, plus a little toward the nearest lane centre
-		-- steerScale: steering strength during the ride (a short tap is about one lane at speed); stuck: on
-		-- its roof or side, or under stuckSpeed, for stuckTime seconds ends the ride
+		-- Ride steering (HighwayClient.rideSteer): steering past `press` picks the next lane (holding steps
+		-- on once within holdStep studs of it); the car heads for the lane at up to changeHeading radians off
+		-- the road (laneGain radians per stud off the lane centre), steering headingGain per radian of error.
+		-- rollAssist multiplies the anti-roll while riding. Stuck: on its roof or side, or under stuckSpeed,
+		-- for stuckTime seconds ends the ride.
 		assist = {
+			press = 0.3,
+			holdStep = 4,
+			laneGain = 0.025,
+			changeHeading = 0.2,
 			headingGain = 2.5,
-			laneGain = 0.015,
-			laneMaxHeading = 0.08,
-			max = 0.3,
-			steerScale = 0.4,
+			rollAssist = 3,
 			stuckSpeed = 8,
 			stuckTime = 1.5,
 		},

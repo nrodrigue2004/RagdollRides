@@ -81,6 +81,8 @@ type RunState = {
 	wreckEndsAt: number,
 	boomUsed: boolean,
 	stuckFor: number,
+	targetLane: number?,
+	steerDir: number,
 	meters: number,
 	lastSpeedX: number,
 }
@@ -426,6 +428,48 @@ local function crash(why: string)
 	HighwayHud.banner(playerGui(), "WRECK MODE!", "Smash everything you can!", Color3.fromRGB(255, 120, 90))
 	controllers.Camera.shake(0.8, 0.4)
 	HighwayHud.boom(playerGui(), boom)
+end
+
+-- Ride steering (Traffic Rider style): a tap moves one lane, holding keeps moving lanes, and with hands
+-- off the car follows the road's curve and settles into its lane. The car drives itself into the chosen
+-- lane at a set angle, so a lane change feels the same at any speed and never leaves the road. In the
+-- air (and in Wreck Mode) steering is normal.
+local function rideSteer(intent: number, steer: number): number
+	local r = run
+	local chassis = myChassis()
+	if r == nil or r.over or r.phase ~= "ride" or chassis == nil then
+		return steer
+	end
+	local state = controllers.Vehicle.getState()
+	if state == nil or state.groundedCount < 2 then
+		r.targetLane = nil
+		return steer
+	end
+	local a = cfg.ride.assist
+	local def = r.def
+	local pos = chassis.Position
+	local s, lateral = HighwayMath.locate(def, pos.X, pos.Z)
+	local target = r.targetLane or HighwayMath.laneAt(def, lateral)
+	local dir = if intent > a.press then 1 elseif intent < -a.press then -1 else 0
+	if dir ~= 0 then
+		local arrived = math.abs(lateral - HighwayMath.laneOffset(def, target)) < a.holdStep
+		if dir ~= r.steerDir or arrived then
+			-- Right (+) is toward lane 1
+			target = math.clamp(target - dir, 1, def.lanes)
+		end
+	end
+	r.steerDir = dir
+	r.targetLane = target
+	local look = chassis.CFrame.LookVector
+	local carHeading = math.atan2(look.X, -look.Z)
+	local wanted = HighwayMath.heading(def, s)
+		- math.clamp(
+			(lateral - HighwayMath.laneOffset(def, target)) * a.laneGain,
+			-a.changeHeading,
+			a.changeHeading
+		)
+	local err = (wanted - carHeading + math.pi) % (2 * math.pi) - math.pi
+	return math.clamp(err * a.headingGain, -1, 1)
 end
 
 -- BOOM: once per wreck, the car blows up and throws everything near it
@@ -805,6 +849,8 @@ local function onStart(msg: { [string]: any })
 		wreckEndsAt = math.huge,
 		boomUsed = false,
 		stuckFor = 0,
+		targetLane = nil,
+		steerDir = 0,
 		meters = 0,
 		lastSpeedX = 1,
 	}
@@ -1092,8 +1138,7 @@ local function showResults(msg: { [string]: any })
 end
 
 local function onEnd(msg: { [string]: any })
-	controllers.Input.setAssistSteer(0)
-	controllers.Input.setSteerScale(1)
+	controllers.Vehicle.setRollAssist(1)
 	local r = run
 	if r == nil or msg.run ~= r.id then
 		return
@@ -1130,18 +1175,9 @@ local function step(dt: number)
 	if r.traffic then
 		Traffic.update(r.traffic, dt, s, pos)
 	end
-	-- Hands-off help during the ride: with no steering the car follows the road's curve and settles into
-	-- the nearest lane, so steering is only for changing lanes (and phones need fewer taps)
 	if r.phase == "ride" and not r.over then
 		local a = cfg.ride.assist
-		local look = chassis.CFrame.LookVector
-		local carHeading = math.atan2(look.X, -look.Z)
-		local centre = HighwayMath.laneOffset(r.def, HighwayMath.laneAt(r.def, lateral))
-		local target = HighwayMath.heading(r.def, s)
-			- math.clamp((lateral - centre) * a.laneGain, -a.laneMaxHeading, a.laneMaxHeading)
-		local err = (target - carHeading + math.pi) % (2 * math.pi) - math.pi
-		controllers.Input.setAssistSteer(math.clamp(err * a.headingGain, -a.max, a.max))
-		controllers.Input.setSteerScale(a.steerScale)
+		controllers.Vehicle.setRollAssist(a.rollAssist)
 		-- Stuck: on its roof or side, or barely moving, for a moment ends the ride (no waiting at FLIP)
 		local stuck = chassis.CFrame.UpVector.Y < 0.4
 			or chassis.AssemblyLinearVelocity.Magnitude < a.stuckSpeed
@@ -1154,8 +1190,7 @@ local function step(dt: number)
 			r.stuckFor = 0
 		end
 	else
-		controllers.Input.setAssistSteer(0)
-		controllers.Input.setSteerScale(1)
+		controllers.Vehicle.setRollAssist(1)
 	end
 	-- Pit Wrenches
 	local wrench = Road.stepWrenches(r.road, os.clock(), pos)
@@ -1244,6 +1279,7 @@ function HighwayClient.start()
 	controllers.Ragdoll.setAutoRespawn(2)
 	controllers.Vehicle.setRemountInPlace(true)
 	controllers.Vehicle.setAutopilot(autopilot)
+	controllers.Input.setSteerFilter(rideSteer)
 	controllers.Vehicle.Spawned:Connect(onSpawned)
 	controllers.Vehicle.Impact:Connect(onImpact)
 	controllers.Vehicle.Respawned:Connect(function()

@@ -80,6 +80,8 @@ local killY = Config.World.killY -- TracksClient sets each map's own (a little u
 local ZERO_INPUT = { throttle = 0, brake = 0, steer = 0, lean = 0, handbrake = false, analogSteer = false }
 -- While the rider is thrown: nil (the car coasts) or a driver (Highway: the car keeps its lane)
 local autopilot: ((number) -> any)? = nil
+-- A mode's anti-roll multiplier (Highway rides: the car stays flat through lane changes at speed)
+local rollAssist = 1
 -- Damage effects on handling (DamageController sets these from the zone numbers; spec: Damage zones)
 local CLEAN_HANDLING = {
 	topSpeed = 1,
@@ -604,7 +606,7 @@ local function step(dt: number)
 		local groundN = s.groundNormal
 		local rollAngle = math.asin(math.clamp(right:Dot(groundN), -1, 1))
 		local rollRate = angular:Dot(look)
-		alpha += look * (drive.antiRollStiffness * rollAngle - drive.antiRollDamping * rollRate)
+		alpha += look * (rollAssist * (drive.antiRollStiffness * rollAngle - drive.antiRollDamping * rollRate))
 		-- Yaw damping: remove part of the yaw rate the steering does not explain
 		local yawRate = angular:Dot(up)
 		local expectedYaw = -VehicleMath.expectedYawRate(forwardSpeed, steerAngle, s.wheelbase)
@@ -987,6 +989,10 @@ end
 
 function VehicleController.setRemountInPlace(value: boolean)
 	remountInPlace = value
+end
+
+function VehicleController.setRollAssist(multiplier: number)
+	rollAssist = math.clamp(multiplier, 1, 10)
 end
 
 -- Who drives while the rider is thrown (nil: nobody, the car coasts)

@@ -9,11 +9,18 @@
 -- * Facts only the device knows (a huge crash, perf samples, a clip share, opening the shop or the mode
 --   picker, viewing an item) arrive on Analytics.Client, rate-limited and checked against a short list.
 -- * anti_cheat: logged at most once a minute per player and rule.
+-- * Stages and quits (the studio-wide FunnelKit, stages in Shared.FunnelDef): the Progress and Returns
+--   funnels, session_start (the stage players are at), stage_reached, and session_end /
+--   first_session_end (stage, activity at quit and how long they were in it, quit reason, length).
+--   A hop between our places (TeleportHub) is one session. Checked every 5 s per player.
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local FunnelDef = require(Shared.FunnelDef)
+local FunnelKit = require(Shared.FunnelKit)
 local Net = require(Shared.Net)
 
 local Services = script.Parent
@@ -81,6 +88,90 @@ local function funnelStep(player: Player, funnel: string, session: string, step:
 	end)
 end
 
+-- The shared FunnelKit (stages, returns, quits). Events only send from published games, so Studio
+-- prints them to the Output instead (the Studio test list checks them there).
+local FIELD_KEYS = {
+	Enum.AnalyticsCustomFieldKeys.CustomField01.Name,
+	Enum.AnalyticsCustomFieldKeys.CustomField02.Name,
+	Enum.AnalyticsCustomFieldKeys.CustomField03.Name,
+}
+local funnels = FunnelKit.new(FunnelDef, {
+	funnel = function(player: Player, funnel: string, session: string, step: number, name: string)
+		if RunService:IsStudio() then
+			print(string.format("[Funnel] %s %s step %d %s", player.Name, funnel, step, name))
+		end
+		funnelStep(player, funnel, session, step, name)
+	end,
+	custom = function(player: Player, name: string, value: number, fields: { string })
+		if RunService:IsStudio() then
+			print(
+				string.format("[Funnel] %s %s %d %s", player.Name, name, value, table.concat(fields, " | "))
+			)
+		end
+		local s = analytics()
+		if s == nil then
+			return
+		end
+		local named: { [string]: string } = {}
+		for i, text in fields do
+			named[FIELD_KEYS[i]] = text
+		end
+		pcall(function()
+			(s :: AnalyticsService):LogCustomEvent(player, name, value, named)
+		end)
+	end,
+}, os.time)
+Analytics.funnels = funnels
+local idleAt: { [Player]: number } = {} -- the last Player.Idled report from the device
+local IDLE_WINDOW = 150 -- a quit this soon after an idle report is an idle quit (Idled fires every ~2 min)
+
+-- A teleport to another of our places is about to start (TeleportHub): not a quit
+function Analytics.hop(player: Player)
+	funnels:hop(player)
+end
+
+-- The teleport failed for good: the player stays here
+function Analytics.hopFailed(player: Player)
+	funnels:hopFailed(player)
+end
+
+-- What the player is doing, for the quit analytics: the builder, a track (starter maps by id), a mode
+local function activityOf(player: Player): string
+	local Place = require(Shared.Place) :: any
+	local role = Place.role()
+	if role == "Brawl" then
+		return "Brawl"
+	elseif role == "Highway" then
+		return "Highway"
+	end
+	local BuilderService = require(Services.BuilderService) :: any
+	if BuilderService.buildingSlot(player) ~= nil then
+		return "Builder"
+	end
+	local TracksService = require(Services.TracksService) :: any
+	local mapId = TracksService.currentMap(player)
+	if mapId == nil then
+		return "Hub"
+	end
+	local StarterMaps = require(Shared.StarterMaps) :: any
+	return if StarterMaps.byId[mapId] then "Track " .. mapId else "Player map"
+end
+
+-- Roblox's exit reason (Enum.PlayerExitReason, 2025) and the device's idle reports, as a quit reason
+local function quitReason(player: Player, exitReason: any?): string
+	local name = if typeof(exitReason) == "EnumItem" then (exitReason :: EnumItem).Name else ""
+	if name == "CreatorKick" then
+		return "kicked"
+	elseif name == "PlatformKick" then
+		return "kicked_roblox"
+	end
+	local idle = idleAt[player]
+	if idle and os.clock() - idle <= IDLE_WINDOW then
+		return "idle"
+	end
+	return "left"
+end
+
 -- Mode entry: a hub view starts a new funnel session; the later steps (in any place) reuse it
 function Analytics.modeStep(player: Player, step: number)
 	local profile = DataService.get(player)
@@ -137,6 +228,8 @@ local function onClient(player: Player, name: string, value: number, a: string, 
 	elseif name == "hub_view" then
 		Analytics.modeStep(player, Analytics.MODE.hubView)
 		EconomyService.funnel(player, 8, "Hub picker")
+	elseif name == "idle" then
+		idleAt[player] = os.clock()
 	end
 end
 
@@ -165,6 +258,39 @@ function Analytics.init()
 		end
 		exploded[player] = model
 		Analytics.event(player, "explosion", 1, mode(), "crash")
+	end)
+	-- Stages and quits (FunnelKit): join on load, a check every 5 s, the quit before the last save
+	DataService.Loaded:Connect(function(player: Player, profile: { [string]: any })
+		profile.funnel = FunnelKit.fill(profile.funnel)
+		funnels:join(player, profile.funnel, profile)
+	end)
+	DataService.Reset:Connect(function(player: Player, profile: { [string]: any })
+		funnels:join(player, profile.funnel, profile) -- a dev reset: a first-time player again
+	end)
+	DataService.Leaving:Connect(function(player: Player, _profile: any, exitReason: any?)
+		funnels:leave(player, quitReason(player, exitReason))
+		idleAt[player] = nil
+	end)
+	game:BindToClose(function()
+		funnels:shutdown()
+	end)
+	task.spawn(function()
+		while true do
+			task.wait(5)
+			for _, player in Players:GetPlayers() do
+				local profile = DataService.get(player)
+				if profile and not funnels:isTracking(player) and not funnels.closing then
+					-- loaded before Analytics.init connected (Studio's first player can be that quick)
+					profile.funnel = FunnelKit.fill(profile.funnel)
+					funnels:join(player, profile.funnel, profile)
+				end
+				if profile and funnels:isTracking(player) then
+					local ok, activity = pcall(activityOf, player)
+					funnels:activity(player, if ok then activity else "Unknown")
+					funnels:check(player, profile)
+				end
+			end
+		end
 	end)
 	Players.PlayerRemoving:Connect(function(player: Player)
 		purchaseSessions[player] = nil

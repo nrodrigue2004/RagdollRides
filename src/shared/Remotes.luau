@@ -404,13 +404,22 @@ local Remotes: { [string]: RemoteDef } = {
 
 	-- Milestone 9: what only the device knows, for the Creator Dashboard (server: Analytics):
 	-- name, value, two short text fields. crash_huge (I, vehicle), perf_sample (average fps,
-	-- "1% low, memory", "preset, device"), clip_share (where), shop_open, item_view (tab), hub_view.
+	-- "1% low, memory", "preset, device"), clip_share (where), shop_open, item_view (tab), hub_view,
+	-- idle (seconds idle, from Player.Idled: a quit soon after one is logged as an idle quit).
 	["Analytics.Client"] = {
 		dir = "C2S",
 		schema = {
 			{
 				t = "string",
-				oneOf = { "crash_huge", "perf_sample", "clip_share", "shop_open", "item_view", "hub_view" },
+				oneOf = {
+					"crash_huge",
+					"perf_sample",
+					"clip_share",
+					"shop_open",
+					"item_view",
+					"hub_view",
+					"idle",
+				},
 			},
 			{ t = "number", min = 0, max = 100000 },
 			{ t = "string", max = 40 },

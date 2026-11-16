@@ -2413,6 +2413,42 @@ test("emotes: wheel, slots and poses", function()
 end)
 
 ---------------------------------------------------------------------------
+-- The studio-wide FunnelKit (same tests in every game) and Ragdoll Rides' stage ladder
+do
+	local FunnelKit = require("../src/shared/FunnelKit")
+	local FunnelDef = require("../src/shared/FunnelDef")
+	require("./funnelkit_test")(test, check, FunnelKit, FunnelDef, ProfileSchema.default())
+
+	test("FunnelDef: Ragdoll Rides ladder", function()
+		local profile = ProfileSchema.default()
+		check(profile.funnel ~= nil and profile.funnel.sessions == 0, "new profiles carry a funnel save")
+		local loaded = ProfileSchema.load({ coins = 5 })
+		check(loaded.funnel ~= nil and loaded.funnel.stage == 0, "old saves gain a funnel save")
+		check(
+			FunnelDef.rounds(profile) == 0 and FunnelDef.cars(profile) == 1,
+			"a new player: 0 rounds, 1 car"
+		)
+		profile.stats.brawlRounds = 1
+		check(FunnelKit.stageOf(FunnelDef, profile) == 2, "a Brawl round counts as a first round")
+		profile.stats.finishes = 2
+		profile.stats.highwayRuns = 2
+		check(FunnelKit.stageOf(FunnelDef, profile) == 3, "5 rounds of any mode")
+		profile.stats.finishes = 40
+		check(FunnelKit.stageOf(FunnelDef, profile) == 3, "rounds alone stop at the Second car stage")
+		profile.vehicles.pocket_sedan = { owned = true, mastery = 0, parts = {} }
+		profile.vehicles.dune_hopper = { owned = true, mastery = 0, parts = {} }
+		check(FunnelKit.stageOf(FunnelDef, profile) == 7, "3 cars and 45 rounds reach 40 rounds")
+		profile.rebirths = 1
+		profile.vehicles = { starter_buggy = { owned = true, mastery = 0, parts = {} } }
+		check(FunnelDef.cars(profile) == 6, "after a rebirth the car stages stay passed")
+		check(FunnelKit.stageOf(FunnelDef, profile) == 9, "first rebirth")
+		profile.stats.races = 60
+		profile.rebirths = 3
+		check(FunnelKit.stageOf(FunnelDef, profile) == #FunnelDef.stages, "the top of the ladder")
+	end)
+end
+
+---------------------------------------------------------------------------
 -- Optional: check the built place file has the scripts in the right services
 local placePath = process.args[1]
 if placePath then

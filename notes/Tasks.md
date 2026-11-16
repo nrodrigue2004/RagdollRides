@@ -174,6 +174,7 @@ Milestone 9 (polish and launch):
 - [ ] Highway Clip: after a run with a few hits, CLIP on the results card replays your best 10 s from 3 angles (your car, rider and nearby traffic); DONE stops it; SHARE opens Roblox's share sheet for the captured picture (phone and PC). A run with no action has no CLIP button.
 - [ ] Beat my score: BEAT MY SCORE opens the friend invite; a friend who joins from it sees "X's score to beat: N" on their results and "You beat X's N!" once they beat it.
 - [ ] Analytics (live, with API access): after a session the Creator Dashboard shows the custom events and the Mode entry and Purchase funnels; perf_sample rows carry fps, 1% low, memory and device.
+- [ ] Stages and quits (FunnelKit), in Studio: the Output prints "[Funnel] ... session_start ... 01 Joined | new | first" on join, Progress steps as you finish rounds and buy cars, and on Stop a "first_session_end" line with the stage, the activity (Hub, Builder, Track pips_hill, Brawl, Highway) and a reason. Hop to Cinder Cove and back in a published test: one session, no session_end at the hop. Live: the Progress and Returns funnels and the four events show in the Creator Dashboard about a day later.
 
 ## Placeholder art and sound
 - PLACEHOLDER ART: all 6 vehicle bodies (VehicleBuilder BODIES blockouts), the rider rig and face, test track parts.

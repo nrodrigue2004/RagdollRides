@@ -9,7 +9,7 @@
 - Playtest 1 fixes (2026-11-15): Tracks damage is looks only, smoother camera, slower respawn, all modes open, paint flicker fixed, lighting pass. Highway Havoc redesigned as Ride then Wreck (distance ride that gets harder, then 10 s of Wreck Mode with BOOM).
 - Studio rounds 4 to 9 on nate's PC (2026-11-16): fixed cars shaking themselves over (dampers solved for the rigid body, softer roll/pitch springs, grip as an impulse); Highway lane-based steering; stuck/flipped rides end fast; no stale boom or double placement; Tracks brakes after the finish.
 - Tests pass (6,745), Selene clean, the 5 places build. Pushed to GitHub on branch claude/project-thread-p3wmkm; the bundle and place files are also in project files.
-- PAUSED 2026-11-16 (nate: Capeline first). Resume with nate's hand playtest of the Tasks.md Studio list.
+- PAUSED 2026-11-16 (nate: Capeline first). Since then only the studio-wide funnel analytics (FunnelKit: Progress and Returns funnels, session_start / session_end with stage, activity and quit reason; guide in project files analytics/). Resume with nate's hand playtest of the Tasks.md Studio list.
 
 ## In progress
 - nate's Studio checks for milestones 1 to 9 and the playtest 1 fixes (Tasks.md "Studio test list"); the Highway checks are rewritten for Ride then Wreck.

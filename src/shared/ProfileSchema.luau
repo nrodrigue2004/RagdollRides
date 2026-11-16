@@ -20,11 +20,13 @@
 --   daily.quests = { Quests.State } today's 3; weekly = { week, quests, starsClaimed }
 --   streak = { day = last day claimed 1..7, lastClaim = whole UTC day number (not yyyymmdd) }
 --   flags.lastMode = "tracks" | "race" | "" : the hub's mode card that glows next session
+--   funnel = the shared FunnelKit save (sessions, furthest stage, first/last session, play time, hop)
 
 -- Roblox finds Config beside this module; the Lune test runner (no `script`) uses the file path.
 local Config = if script then require(script.Parent.Config) else (require :: any)("./Config")
 local Quests = if script then require(script.Parent.Quests) else (require :: any)("./Quests")
 local Emotes = if script then require(script.Parent.Emotes) else (require :: any)("./Emotes")
+local FunnelKit = if script then require(script.Parent.FunnelKit) else (require :: any)("./FunnelKit")
 
 local ProfileSchema = {}
 
@@ -114,6 +116,7 @@ function ProfileSchema.default(): { [string]: any }
 		trackOrder = {},
 		ghosts = {},
 		ghostOrder = {},
+		funnel = FunnelKit.blank(), -- the shared FunnelKit's numbers (sessions, stage, play time)
 	}
 end
 

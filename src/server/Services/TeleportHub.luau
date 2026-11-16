@@ -52,12 +52,16 @@ local function hop(player: Player, placeId: number, data: { [string]: any }): (b
 	options:SetTeleportData(data)
 	for _, member in group do
 		attempts[member] = { placeId = placeId, options = options, tries = 0 }
+		Analytics.hop(member) -- a hop between our places is not a quit (FunnelKit)
 	end
 	local ok, err = pcall(function()
 		TeleportService:TeleportAsync(placeId, group, options)
 	end)
 	if not ok then
 		warn("[Teleport] " .. tostring(err))
+		for _, member in group do
+			Analytics.hopFailed(member)
+		end
 		return false, "teleportFailed"
 	end
 	return true, nil
@@ -115,6 +119,7 @@ function TeleportHub.init()
 		attempt.tries += 1
 		if attempt.tries > Config.Places.teleportRetries then
 			attempts[player] = nil
+			Analytics.hopFailed(player)
 			Net.fire("Notice", player, "teleportFailed")
 			return
 		end

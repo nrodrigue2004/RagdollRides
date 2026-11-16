@@ -24,7 +24,8 @@ local DataService = {}
 
 DataService.Loaded = Signal.new() -- (player, profile)
 DataService.Reset = Signal.new() -- (player, profile): a dev reset made it a first-time profile
--- (player, profile): the player is leaving; handlers run before the last save (a ranked quit penalty)
+-- (player, profile, exitReason?): the player is leaving; handlers run before the last save (a ranked quit
+-- penalty, the quit analytics)
 DataService.Leaving = Signal.new()
 DataService.SettingChanged = Signal.new() -- (player, key, value): a setting the player changed
 
@@ -307,9 +308,11 @@ local function onPlayerAdded(player: Player)
 	DataService.Loaded:Fire(player, session.profile)
 end
 
-local function onPlayerRemoving(player: Player)
+-- exitReason: Roblox's Enum.PlayerExitReason (2025), passed on to Leaving for the quit analytics
+local function onPlayerRemoving(player: Player, exitReason: any?)
 	if sessions[player] then
-		local ok, err = pcall(DataService.Leaving.Fire, DataService.Leaving, player, sessions[player].profile)
+		local ok, err =
+			pcall(DataService.Leaving.Fire, DataService.Leaving, player, sessions[player].profile, exitReason)
 		if not ok then
 			warn("[Data] leaving handler: " .. tostring(err))
 		end

@@ -4,6 +4,8 @@
 --   and the device class (phone, tablet, PC, console).
 -- * crash_huge on a Huge crash (at most one every 5 s).
 -- * Telemetry.send(name, value, a?, b?) for the screens: shop_open, item_view, hub_view, clip_share.
+-- * idle when Roblox says the player has been idle (Player.Idled, about every 2 minutes), so the server
+--   can tell an AFK quit from a player who left mid-play.
 
 local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
@@ -52,6 +54,10 @@ function Telemetry.init(all)
 end
 
 function Telemetry.start()
+	local localPlayer = game:GetService("Players").LocalPlayer
+	localPlayer.Idled:Connect(function(seconds: number)
+		Telemetry.send("idle", math.floor(seconds))
+	end)
 	local frames: { number } = {}
 	local elapsed = 0
 	RunService.Heartbeat:Connect(function(dt)

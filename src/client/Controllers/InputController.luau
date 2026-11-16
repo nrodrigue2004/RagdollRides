@@ -35,6 +35,9 @@ local touch = {
 local pad = { throttle = 0, brake = 0, stickX = 0, stickY = 0, handbrake = false }
 local pressed: { [string]: boolean } = {}
 local override: Snapshot? = nil
+-- Studio only: Workspace attributes TestThrottle and TestSteer (-1 to 1) drive the car, so an automated
+-- Studio test can drive without a keyboard. Ignored in live servers.
+local STUDIO = game:GetService("RunService"):IsStudio()
 local rampedSteer = 0
 local lastDevice = "keyboard"
 
@@ -114,6 +117,17 @@ function InputController.read(dt: number): Snapshot
 		math.max(if keyDown(Enum.KeyCode.S, Enum.KeyCode.Down) or touch.brake then 1 else 0, pad.brake)
 
 	local digitalSteer = 0
+	if STUDIO then
+		local testThrottle = workspace:GetAttribute("TestThrottle")
+		local testSteer = workspace:GetAttribute("TestSteer")
+		if type(testThrottle) == "number" then
+			throttle = math.max(throttle, math.clamp(testThrottle, 0, 1))
+			brake = math.max(brake, math.clamp(-testThrottle, 0, 1))
+		end
+		if type(testSteer) == "number" then
+			digitalSteer = math.clamp(testSteer, -1, 1)
+		end
+	end
 	if keyDown(Enum.KeyCode.A, Enum.KeyCode.Left) or touch.left then
 		digitalSteer -= 1
 	end

@@ -435,7 +435,9 @@ local function step(dt: number)
 		progressiveSpeed = drive.progressiveDampingSpeed,
 		reboundMultiplier = drive.reboundDampingMultiplier,
 	}
-	local lateralStiffness = cornerMass * math.min(drive.lateralStiffness, 0.6 / dt)
+	-- Sideways grip takes at most half the slip in one frame (roll and yaw make a corner react up to about
+	-- 1.6x more than a quarter of the mass would)
+	local lateralStiffness = cornerMass * math.min(drive.lateralStiffness, 0.5 / dt)
 	local maxGripLoad = cornerMass * gravity * drive.maxGripLoadG
 
 	-- Suspension rays (one frame of lookahead so fast drops are caught before the belly hits)
@@ -563,6 +565,7 @@ local function step(dt: number)
 
 	local totalForce = Vector3.zero
 	local totalTorque = Vector3.zero
+	local gripImpulse = Vector3.zero
 	for _, w in s.wheels do
 		if w.lost and w.axleDrag then
 			-- A dragging axle: friction against the ground at that corner
@@ -621,13 +624,22 @@ local function step(dt: number)
 		fx, fy = VehicleMath.frictionCircle(fx, fy, maxForce)
 
 		local suspensionForce = up * w.spring
-		local tire = wheelForward * fx + wheelRight * fy
+		local tire = wheelForward * fx
 		local mountWorld = cf:PointToWorldSpace(w.mount)
 		local heightToCom = (com - w.contact):Dot(up)
 		local tirePoint = w.contact + up * (heightToCom * (1 - drive.tireForceHeightFactor))
+		-- Sideways grip is an impulse for this frame. As a held force it kept pushing through a long next
+		-- frame, over-corrected, and the car rocked itself over after a hitch.
+		if fy ~= 0 then
+			local impulse = wheelRight * (fy * dt)
+			chassis:ApplyImpulseAtPosition(impulse, tirePoint)
+			gripImpulse += impulse
+		end
 		totalForce += suspensionForce + tire
 		totalTorque += (mountWorld - com):Cross(suspensionForce) + (tirePoint - com):Cross(tire)
 	end
+
+	s.scriptedDeltaV += gripImpulse / mass
 
 	-- Assists and air control, as angular accelerations
 	local alpha = Vector3.zero

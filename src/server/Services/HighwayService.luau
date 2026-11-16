@@ -980,6 +980,10 @@ function HighwayService.init()
 		local decoded = DamageModel.decode(state)
 		if decoded and bit32.band(decoded.flags, DamageModel.FLAG_EXPLODED) ~= 0 then
 			local r = run :: Run
+			-- A state sent by the last ride's blown-up car can arrive just after a new ride starts
+			if now() - r.startAt < 1.5 then
+				return
+			end
 			if r.phase == "ride" then
 				startWreck(player, r, "boom")
 			end

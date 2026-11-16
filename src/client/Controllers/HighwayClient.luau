@@ -866,12 +866,7 @@ local function onStart(msg: { [string]: any })
 		TracksHud.showCue("GO AS FAR AS YOU CAN!", 1.6)
 	end
 	controllers.Juice.fire("Finish", { volume = 0.4 })
-	-- The car may be there already (the server spawns a new one for each ride too; placing both is harmless)
-	local chassis = myChassis()
-	if chassis and chassis.Parent then
-		local model = chassis.Parent :: Model
-		task.defer(onSpawned, model)
-	end
+	-- The server puts a new car down right after Highway.Start, so onSpawned runs from Vehicle.Spawned
 end
 
 local function onScore(msg: { [string]: any })

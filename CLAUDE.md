@@ -13,6 +13,7 @@ Read this first. Keep it short. Quality comes first; efficiency never means lowe
   - `rojo serve` (live sync into Studio with the Rojo plugin)
   - `lune run tests/run.luau build/RagdollRides.rbxl` (unit tests + place layout check)
   - `selene src tests` and `stylua src tests` (lint and format)
+  - `python3 tests/callcheck.py .` (every `controllers.X.y` and required-module `M.y` call names a real function; catches nil-call crashes Studio would hit)
 
 ## Memory: read these, keep them current
 - `notes/Current Progress.md`: done / in progress / next. Under 20 lines. Read it at the start of every session.

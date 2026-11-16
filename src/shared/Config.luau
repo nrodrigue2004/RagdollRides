@@ -299,6 +299,12 @@ Config.Driving = {
 	-- rebound, plus a bump stop past full compression. Tuned in tests/run.luau's drop simulation so a
 	-- 20-stud drop settles in about 0.2 s with no rebound at 60 and 30 fps. (tune)
 	progressiveDampingSpeed = 15,
+	-- Springs roll and pitch the body at this fraction of their lift stiffness. The full roll spring rang at
+	-- about 36 rad/s, so a frame over about 0.04 s (a hitch, a slow phone) overshot and rocked the car over;
+	-- at 0.25 it rings at about 18 rad/s (stable to about 0.08 s frames) and leans a few degrees more in
+	-- corners. (tune)
+	springRollFactor = 0.25,
+	springPitchFactor = 0.6,
 	reboundDampingMultiplier = 1.5,
 	bumpStopStiffnessMultiplier = 3,
 	bumpStopDampingMultiplier = 6,

@@ -303,7 +303,9 @@ end)
 
 -- A car rolling on flat ground (heave, roll and pitch, 4 corners, forces once per frame, 240 Hz physics):
 -- it must settle, never shake itself over, at phone frame rates too.
-local function rollSim(class, frameRate: number, perCorner: boolean): number
+-- uneven: every other frame takes twice as long (the frames after a hitch), and the guards only know the
+-- frame that just ended
+local function rollSim(class, frameRate: number, perCorner: boolean, uneven: boolean?): number
 	local g = Config.World.gravity
 	local drive = Config.Driving
 	local mass = class.relativeMass * drive.baseMass
@@ -312,32 +314,41 @@ local function rollSim(class, frameRate: number, perCorner: boolean): number
 	local iPitch, _, iRoll = VehicleMath.boxInertia(mass, sx, sy, sz)
 	local x = { -class.halfTrack, class.halfTrack, -class.halfTrack, class.halfTrack }
 	local z = { class.frontAxleZ, class.frontAxleZ, class.rearAxleZ, class.rearAxleZ }
-	local amp = if perCorner then 1 else VehicleMath.cornerAmplification(x, z, mass, iRoll, iPitch)
+	local rollFactor = if perCorner then 1 else drive.springRollFactor
+	local pitchFactor = if perCorner then 1 else drive.springPitchFactor
+	local amp = if perCorner
+		then 1
+		else VehicleMath.cornerAmplification(x, z, mass, iRoll / rollFactor, iPitch / pitchFactor)
 	local k, c = VehicleMath.springCoefficients(corner, class.springFrequency, class.dampingRatio)
 	local dt = 1 / frameRate
-	local springLimit = corner / amp * (1.6 / dt) ^ 2
-	local params = {
-		k = math.min(k, springLimit),
-		c = c,
-		bumpK = math.min(k * drive.bumpStopStiffnessMultiplier, springLimit),
-		bumpDampingMultiplier = drive.bumpStopDampingMultiplier,
-		cornerMass = corner,
-		travel = class.suspensionTravel,
-		radius = class.wheelRadius,
-		progressiveSpeed = drive.progressiveDampingSpeed,
-		reboundMultiplier = drive.reboundDampingMultiplier,
-	}
+	local function paramsFor(frameDt: number)
+		local springLimit = corner / amp * (1.6 / frameDt) ^ 2
+		return {
+			k = math.min(k, springLimit),
+			c = c,
+			bumpK = math.min(k * drive.bumpStopStiffnessMultiplier, springLimit),
+			bumpDampingMultiplier = drive.bumpStopDampingMultiplier,
+			cornerMass = corner,
+			travel = class.suspensionTravel,
+			radius = class.wheelRadius,
+			progressiveSpeed = drive.progressiveDampingSpeed,
+			reboundMultiplier = drive.reboundDampingMultiplier,
+		}
+	end
 	local sag = g / (2 * math.pi * class.springFrequency) ^ 2
 	local h = class.suspensionTravel - sag + class.wheelRadius
 	local vh, roll, wr, pitch, wp = 0, 0, 3, 0, 0
-	local substeps = math.max(1, math.floor(240 / frameRate))
 	local worst = 0
+	local lastDt = dt
+	local t = 0
 	for frame = 1, math.floor(3 * frameRate) do
+		local nextDt = if uneven and frame % 2 == 0 then 2 * dt else dt
+		local params = paramsFor(lastDt)
 		local forces, dvs = {}, {}
 		for i = 1, 4 do
 			local y = h + roll * x[i] + pitch * z[i]
 			local v = vh + wr * x[i] + wp * z[i]
-			local spring, deltaV = VehicleMath.suspensionStep(params, y, -v, dt)
+			local spring, deltaV = VehicleMath.suspensionStep(params, y, -v, lastDt)
 			forces[i], dvs[i] = spring, deltaV
 		end
 		local impulses = if perCorner
@@ -351,11 +362,12 @@ local function rollSim(class, frameRate: number, perCorner: boolean): number
 		local f, tr, tp = 0, 0, 0
 		for i = 1, 4 do
 			f += forces[i]
-			tr += forces[i] * x[i]
-			tp += forces[i] * z[i]
+			tr += forces[i] * x[i] * rollFactor
+			tp += forces[i] * z[i] * pitchFactor
 		end
+		local substeps = math.max(1, math.floor(nextDt * 240 + 0.5))
 		for _ = 1, substeps do
-			local step = dt / substeps
+			local step = nextDt / substeps
 			vh += (f / mass - g) * step
 			wr += tr / iRoll * step
 			wp += tp / iPitch * step
@@ -363,28 +375,35 @@ local function rollSim(class, frameRate: number, perCorner: boolean): number
 			roll += wr * step
 			pitch += wp * step
 		end
-		if frame > frameRate then
+		t += nextDt
+		lastDt = nextDt
+		if t > 1 then
 			worst = math.max(worst, math.abs(wr))
 		end
 	end
 	return worst
 end
 
-test("a rolling car settles at 20, 30 and 60 fps (no shaking itself over)", function()
+test("a rolling car settles at 20, 30 and 60 fps and after hitches (no shaking itself over)", function()
 	for id, class in Config.Classes do
 		for _, fps in { 60, 30, 20 } do
 			local worst = rollSim(class, fps, false)
 			local old = rollSim(class, fps, true)
+			local uneven = rollSim(class, fps, false, true)
 			print(
 				string.format(
-					"    roll %-5s @%d fps: roll rate after 1 s %.3f rad/s (corner by corner: %.3g)",
+					"    roll %-5s @%d fps: roll rate after 1 s %.3f rad/s, uneven frames %.3f (old way: %.3g)",
 					id,
 					fps,
 					worst,
+					uneven,
 					old
 				)
 			)
 			check(worst < 0.05, id .. " roll settles within 1 s at " .. fps .. " fps")
+			if fps >= 30 then -- (at 20 fps, uneven frames are 0.1 s long: past what the springs are tuned for)
+				check(uneven < 0.05, id .. " roll settles within 1 s with uneven frames at " .. fps .. " fps")
+			end
 		end
 	end
 end)

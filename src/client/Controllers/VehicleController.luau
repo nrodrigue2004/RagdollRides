@@ -75,6 +75,9 @@ type Sequence = {
 
 local controllers: any = nil
 local state: any = nil -- the current vehicle's state, or nil
+-- The newest car of ours to appear: a slower set-up of an older car (it waits for its parts) must not
+-- take over from it
+local latestModel: Model? = nil
 local settings = { steerAssist = "High" } -- ProfileClient applies the saved setting (and maps can force High)
 local killY = Config.World.killY -- TracksClient sets each map's own (a little under its lowest road)
 local ZERO_INPUT = { throttle = 0, brake = 0, steer = 0, lean = 0, handbrake = false, analogSteer = false }
@@ -289,10 +292,19 @@ local function setup(model: Model)
 		for i, w in s.wheels do
 			xs[i], zs[i] = w.mount.X, w.mount.Z
 		end
-		s.amplification = VehicleMath.cornerAmplification(xs, zs, mass, iz, ix)
+		s.amplification = VehicleMath.cornerAmplification(
+			xs,
+			zs,
+			mass,
+			iz / Config.Driving.springRollFactor,
+			ix / Config.Driving.springPitchFactor
+		)
 	end
 
 	local center = chassis:WaitForChild("Center") :: Attachment
+	if latestModel ~= model or model.Parent == nil then
+		return
+	end
 	local vectorForce = Instance.new("VectorForce")
 	vectorForce.Name = "DriveForce"
 	vectorForce.Attachment0 = center
@@ -566,6 +578,7 @@ local function step(dt: number)
 	local totalForce = Vector3.zero
 	local totalTorque = Vector3.zero
 	local gripImpulse = Vector3.zero
+	local springTorque = Vector3.zero
 	for _, w in s.wheels do
 		if w.lost and w.axleDrag then
 			-- A dragging axle: friction against the ground at that corner
@@ -636,10 +649,16 @@ local function step(dt: number)
 			gripImpulse += impulse
 		end
 		totalForce += suspensionForce + tire
-		totalTorque += (mountWorld - com):Cross(suspensionForce) + (tirePoint - com):Cross(tire)
+		springTorque += (mountWorld - com):Cross(suspensionForce)
+		totalTorque += (tirePoint - com):Cross(tire)
 	end
 
 	s.scriptedDeltaV += gripImpulse / mass
+	-- Springs roll and pitch the body more softly than they lift it: a stiff roll spring held through a
+	-- long frame overshoots and rocks the car over (frame hitches on phones and at load)
+	totalTorque += look * (springTorque:Dot(look) * drive.springRollFactor) + right * (springTorque:Dot(right) * drive.springPitchFactor) + up * springTorque:Dot(
+		up
+	)
 
 	-- Assists and air control, as angular accelerations
 	local alpha = Vector3.zero
@@ -1118,6 +1137,7 @@ function VehicleController.start()
 	local folder = workspace:WaitForChild("Vehicles")
 	local function consider(model: Instance)
 		if model:IsA("Model") and model:GetAttribute("OwnerUserId") == LocalPlayer.UserId then
+			latestModel = model
 			task.spawn(setup, model)
 		end
 	end

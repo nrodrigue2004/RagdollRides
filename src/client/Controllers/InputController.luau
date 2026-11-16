@@ -41,6 +41,8 @@ local STUDIO = game:GetService("RunService"):IsStudio()
 -- A mode's hands-off steering help (Highway: follow the road and settle into a lane), used only while the
 -- player is not steering. -1 to 1.
 local assistSteer = 0
+-- A mode's steering strength (Highway rides: gentler, so a tap is one lane change at speed). 1 = normal.
+local steerScale = 1
 local rampedSteer = 0
 local lastDevice = "keyboard"
 
@@ -85,6 +87,10 @@ end
 
 function InputController.tap(action: string)
 	press(action)
+end
+
+function InputController.setSteerScale(scale: number)
+	steerScale = math.clamp(scale, 0.1, 1)
 end
 
 function InputController.setAssistSteer(value: number)
@@ -146,12 +152,12 @@ function InputController.read(dt: number): Snapshot
 	local analog = false
 	local stick = deadzone(pad.stickX)
 	if stick ~= 0 and digitalSteer == 0 then
-		steer = stick
+		steer = stick * steerScale
 		rampedSteer = stick
 		analog = true
 	else
 		rampedSteer = VehicleMath.rampInput(rampedSteer, digitalSteer, Config.Driving.steerRampTime, dt)
-		steer = rampedSteer
+		steer = rampedSteer * steerScale
 		if digitalSteer == 0 and assistSteer ~= 0 then
 			steer = math.clamp(steer + assistSteer, -1, 1)
 		end

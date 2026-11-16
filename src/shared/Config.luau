@@ -1080,7 +1080,17 @@ Config.Highway = {
 		startGap = 30, -- studs of clear lane ahead and behind where a ride begins (never inside a car)
 		-- Hands-off steering help during the ride (only while you are not steering): turn toward the road's
 		-- heading, plus a little toward the nearest lane centre
-		assist = { headingGain = 2.5, laneGain = 0.015, laneMaxHeading = 0.08, max = 0.3 },
+		-- steerScale: steering strength during the ride (a short tap is about one lane at speed); stuck: on
+		-- its roof or side, or under stuckSpeed, for stuckTime seconds ends the ride
+		assist = {
+			headingGain = 2.5,
+			laneGain = 0.015,
+			laneMaxHeading = 0.08,
+			max = 0.3,
+			steerScale = 0.4,
+			stuckSpeed = 8,
+			stuckTime = 1.5,
+		},
 		wreckLength = 10, -- seconds of Wreck Mode after the crash: smash everything for points
 		boomRadius = 30, -- BOOM (once per wreck): blow your car up and send everything near it flying
 		idleLimit = 25, -- seconds without moving forward ends the ride

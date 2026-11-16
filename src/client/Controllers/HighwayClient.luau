@@ -80,6 +80,7 @@ type RunState = {
 	phase: string, -- "ride" or "wreck"
 	wreckEndsAt: number,
 	boomUsed: boolean,
+	stuckFor: number,
 	meters: number,
 	lastSpeedX: number,
 }
@@ -803,6 +804,7 @@ local function onStart(msg: { [string]: any })
 		phase = "ride",
 		wreckEndsAt = math.huge,
 		boomUsed = false,
+		stuckFor = 0,
 		meters = 0,
 		lastSpeedX = 1,
 	}
@@ -1091,6 +1093,7 @@ end
 
 local function onEnd(msg: { [string]: any })
 	controllers.Input.setAssistSteer(0)
+	controllers.Input.setSteerScale(1)
 	local r = run
 	if r == nil or msg.run ~= r.id then
 		return
@@ -1138,8 +1141,21 @@ local function step(dt: number)
 			- math.clamp((lateral - centre) * a.laneGain, -a.laneMaxHeading, a.laneMaxHeading)
 		local err = (target - carHeading + math.pi) % (2 * math.pi) - math.pi
 		controllers.Input.setAssistSteer(math.clamp(err * a.headingGain, -a.max, a.max))
+		controllers.Input.setSteerScale(a.steerScale)
+		-- Stuck: on its roof or side, or barely moving, for a moment ends the ride (no waiting at FLIP)
+		local stuck = chassis.CFrame.UpVector.Y < 0.4
+			or chassis.AssemblyLinearVelocity.Magnitude < a.stuckSpeed
+		if stuck and t - r.startAt > 2 then
+			r.stuckFor += dt
+			if r.stuckFor >= a.stuckTime then
+				crash("stuck")
+			end
+		else
+			r.stuckFor = 0
+		end
 	else
 		controllers.Input.setAssistSteer(0)
+		controllers.Input.setSteerScale(1)
 	end
 	-- Pit Wrenches
 	local wrench = Road.stepWrenches(r.road, os.clock(), pos)

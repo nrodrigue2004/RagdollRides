@@ -74,7 +74,7 @@ end
 
 local function stroke(parent: Instance, thickness: number?, mode: Enum.ApplyStrokeMode?)
 	local s = Instance.new("UIStroke")
-	s.Thickness = thickness or 3
+	s.Thickness = thickness or 2
 	s.Color = INK
 	s.ApplyStrokeMode = mode or Enum.ApplyStrokeMode.Border
 	s.Parent = parent
@@ -418,7 +418,7 @@ function BrowseHud.open(parent: Instance, tabs: { Tab }, selected: string, actio
 	panel.Size = UDim2.fromScale(0.96, 0.92)
 	panel.BackgroundColor3 = PANEL
 	corner(panel, 0.04)
-	stroke(panel, 4)
+	stroke(panel, 2)
 	panel.Parent = shade
 	local aspect = Instance.new("UIAspectRatioConstraint")
 	aspect.AspectRatio = 1.7

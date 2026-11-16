@@ -3,6 +3,8 @@
 -- * Run bar (top centre): the run timer, the big Destruction Score, the combo meter (x1 to x8 with its
 --   3 s bar draining), the Crack Count (n / 12), the server's Havoc meter and today's event chip.
 -- * Pops: "+points" where a hit landed, and big banners for PILE-UP!, NEAR MISS, FLIP and bone breaks.
+--   Calm pass (nate, 2026-11-15: "way too much going on"): at most 3 pops and 1 banner on screen; the
+--   ride shows only distance, speed and score (combo, Havoc meter and Crack Count wait for Wreck Mode).
 -- * X-ray: a cartoon skeleton flashes for 0.25 s on a bone break with the broken bones in red. With
 --   Fewer flashes on, the rider glows instead (HighwayClient).
 -- * Results card: score, bones, best combo, pile-ups, coins, the daily Havoc target bar, personal best,
@@ -65,7 +67,8 @@ end
 
 local function textStroke(label: TextLabel, thickness: number?)
 	local s = Instance.new("UIStroke")
-	s.Thickness = thickness or 2
+	s.Thickness = math.min(thickness or 2, 2)
+	s.Transparency = 0.25
 	s.Color = INK
 	s.Parent = label
 end
@@ -200,7 +203,7 @@ function HighwayHud.run(parent: Instance, view: RunView?)
 		textStroke(timer)
 		local score = text(f, "Score", "0", GOLD)
 		score.Position = UDim2.fromScale(0, 0.15)
-		score.Size = UDim2.fromScale(1, 0.34)
+		score.Size = UDim2.fromScale(1, 0.28)
 		textStroke(score, 3)
 		local scale = Instance.new("UIScale")
 		scale.Parent = score
@@ -283,17 +286,19 @@ function HighwayHud.run(parent: Instance, view: RunView?)
 		TweenService:Create(l.comboScale, TweenInfo.new(0.3, Enum.EasingStyle.Back), { Scale = 1 }):Play()
 	end
 	l.lastMultiplier = m
-	l.comboBack.Visible = view.comboLeft > 0
+	local riding = view.phase == "ride"
+	l.combo.Visible = not riding
+	l.comboBack.Visible = view.comboLeft > 0 and not riding
 	l.comboFill.Size = UDim2.fromScale(math.clamp(view.comboLeft, 0, 1), 1)
 	l.comboFill.BackgroundColor3 = COMBO_COLORS[m]
 	l.crack.Visible = view.phase ~= "ride"
 	l.crack.Text = string.format("%s %d / %d", cfg.counterLabel, view.breaks, cfg.bones.total)
 	l.crack.TextColor3 = if view.breaks > 0 then Color3.fromRGB(255, 240, 200) else WHITE
-	l.meterBack.Visible = not view.tutorial
+	l.meterBack.Visible = not view.tutorial and not riding
 	l.meterFill.Size = UDim2.fromScale(1, math.clamp(view.meter, 0, 1))
 	if view.tutorial then
 		l.chip.Text = "PRACTICE ROAD"
-	elseif view.event then
+	elseif view.event and (not riding or (view.meters or 0) < 200) then
 		l.chip.Text = view.event.name .. ": " .. view.event.line
 	else
 		l.chip.Text = ""
@@ -338,6 +343,9 @@ end
 -- Pops and banners
 ---------------------------------------------------------------------------
 
+local pops: { TextLabel } = {}
+local lastBanner: Frame? = nil
+
 -- "+120" at a point in the world (or the screen centre), floating up and fading
 function HighwayHud.pop(parent: Instance, value: string, color: Color3?, worldPoint: Vector3?, size: number?)
 	local g = ensureGui(parent)
@@ -351,7 +359,15 @@ function HighwayHud.pop(parent: Instance, value: string, color: Color3?, worldPo
 			y = math.clamp(screen.Y / viewport.Y, 0.15, 0.85)
 		end
 	end
+	-- At most 3 pops at once: the oldest goes
+	while #pops >= 3 do
+		local oldest = table.remove(pops, 1)
+		if oldest then
+			oldest:Destroy()
+		end
+	end
 	local label = text(g, "Pop", value, color or GOLD)
+	table.insert(pops, label)
 	label.AnchorPoint = Vector2.new(0.5, 0.5)
 	label.Position = UDim2.fromScale(x, y)
 	label.SizeConstraint = Enum.SizeConstraint.RelativeYY
@@ -367,6 +383,10 @@ function HighwayHud.pop(parent: Instance, value: string, color: Color3?, worldPo
 		{ Position = UDim2.fromScale(x, y - 0.08), TextTransparency = 1 }
 	):Play()
 	task.delay(0.95, function()
+		local index = table.find(pops, label)
+		if index then
+			table.remove(pops, index)
+		end
 		label:Destroy()
 	end)
 end
@@ -374,12 +394,16 @@ end
 -- A big banner across the middle (PILE-UP!, NEAR MISS, CRACK!)
 function HighwayHud.banner(parent: Instance, title: string, line: string?, color: Color3?)
 	local g = ensureGui(parent)
+	if lastBanner then
+		lastBanner:Destroy() -- one banner at a time
+	end
 	local f = Instance.new("Frame")
 	f.Name = "Banner"
+	lastBanner = f
 	f.AnchorPoint = Vector2.new(0.5, 0.5)
 	f.Position = UDim2.fromScale(0.5, 0.36)
 	f.SizeConstraint = Enum.SizeConstraint.RelativeYY
-	f.Size = UDim2.fromScale(1.1, 0.16)
+	f.Size = UDim2.fromScale(1.1, 0.12)
 	f.BackgroundTransparency = 1
 	f.Parent = g
 	local t = text(f, "Title", title, color or GOLD)
@@ -586,7 +610,7 @@ function HighwayHud.showResults(parent: Instance, view: ResultView, actions: Res
 	card.Size = UDim2.fromScale(1.15, 0.86)
 	card.BackgroundColor3 = PANEL
 	corner(card, 0.05)
-	stroke(card, 4)
+	stroke(card, 2)
 	card.Parent = shade
 	local title = text(card, "Title", view.title, INK)
 	title.Position = UDim2.fromScale(0.05, 0.03)
@@ -789,7 +813,7 @@ function HighwayHud.openBoard(parent: Instance, view: BoardView, onClose: () -> 
 	p.Size = UDim2.fromScale(0.94, 0.9)
 	p.BackgroundColor3 = PANEL
 	corner(p, 0.04)
-	stroke(p, 4)
+	stroke(p, 2)
 	p.Parent = shade
 	local aspect = Instance.new("UIAspectRatioConstraint")
 	aspect.AspectRatio = 1.75

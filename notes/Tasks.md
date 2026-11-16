@@ -159,6 +159,11 @@ Playtest 1 fixes (2026-11-15):
 - [ ] Paint a car in the garage, crash it, then repair: no flicker of the old paint at any point.
 - [ ] Lighting: shadows, haze, bloom and sun rays look better? Settings → Effects Low turns bloom, sun rays and the grade off.
 
+Calm pass (2026-11-15):
+- [ ] Driving in Tracks shows only coins and stars, the timer, MENU, RESET and the speed. MENU opens the panel (goal bar on top; HUB, MAPS, BUILD, TOP, SHOP, GARAGE, QUESTS, EMOTE, SETTINGS); tapping outside or CLOSE shuts it; every item still opens its screen. A claimable quest puts a red dot on MENU and on QUESTS.
+- [ ] Highway ride: only distance, speed and score at the top; combo, Havoc meter and Crack Count appear in Wreck Mode. Never more than 3 point pops or 1 banner at once.
+- [ ] Does it still look busy anywhere? Tell Claude which screen.
+
 Milestone 9 (polish and launch):
 - [ ] Loading: joining shows the Wobble Bot screen (sky blue, RAGDOLL RIDES); tapping him bounces him and changes the line; it fades once you can drive (never stuck: 25 s at most). A mode hop (hub card) shows the same screen during the teleport.
 - [ ] Juice: speed lines at the screen edges above about 80 studs/s (none with Reduced motion); a coin flies to the coin counter, which bounces; star puff when the rider is thrown; a glow ring on respawn; confetti on a quest or chest claim; a tiny freeze on each checkpoint; the camera pulls back on a Highway pile-up. Too much or about right?

@@ -160,7 +160,7 @@ function RaceHud.showResults(parent: Instance, view: ResultView)
 	card.Size = UDim2.fromScale(1.15, 0.86)
 	card.BackgroundColor3 = PANEL
 	corner(card, 0.05)
-	stroke(card, 4)
+	stroke(card, 2)
 	card.Parent = g
 	results = card
 	local title = text(card, "Title", view.title, INK)

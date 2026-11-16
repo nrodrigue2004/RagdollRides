@@ -53,8 +53,8 @@
       "Atmosphere": {
         "$className": "Atmosphere",
         "$properties": {
-          "Density": 0.28,
-          "Offset": 0.2,
+          "Density": 0.18,
+          "Offset": 0.1,
           "Color": [
             0.78,
             0.86,
@@ -65,36 +65,29 @@
             0.72,
             0.9
           ],
-          "Glare": 0.3,
-          "Haze": 1.2
+          "Glare": 0,
+          "Haze": 0.4
         }
       },
       "Bloom": {
         "$className": "BloomEffect",
         "$properties": {
-          "Intensity": 0.35,
-          "Size": 24,
-          "Threshold": 1.4
+          "Intensity": 0.12,
+          "Size": 14,
+          "Threshold": 2
         }
       },
       "Grade": {
         "$className": "ColorCorrectionEffect",
         "$properties": {
-          "Saturation": 0.18,
-          "Contrast": 0.08,
-          "Brightness": 0.02,
+          "Saturation": 0.04,
+          "Contrast": 0.04,
+          "Brightness": 0,
           "TintColor": [
             1.0,
             0.99,
             0.97
           ]
-        }
-      },
-      "SunRays": {
-        "$className": "SunRaysEffect",
-        "$properties": {
-          "Intensity": 0.04,
-          "Spread": 0.7
         }
       }
     },

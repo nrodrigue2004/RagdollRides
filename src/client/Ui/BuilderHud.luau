@@ -88,7 +88,7 @@ end
 
 local function stroke(parent: Instance, thickness: number?, mode: Enum.ApplyStrokeMode?)
 	local s = Instance.new("UIStroke")
-	s.Thickness = thickness or 3
+	s.Thickness = thickness or 2
 	s.Color = INK
 	s.ApplyStrokeMode = mode or Enum.ApplyStrokeMode.Border
 	s.Parent = parent
@@ -189,7 +189,7 @@ local function modal(name: string, width: number, height: number): Frame
 	maxSize.MaxSize = Vector2.new(math.huge, math.huge)
 	maxSize.Parent = card
 	corner(card, 0.06)
-	stroke(card, 4)
+	stroke(card, 2)
 	card.Parent = shade
 	return shade
 end
@@ -562,7 +562,7 @@ function BuilderHud.openDrafts(cards: { DraftCard }, note: string?, onPick: (num
 		b.BackgroundColor3 = if entry.locked then GREY elseif entry.pieces > 0 then WHITE else PANEL
 		b.AutoButtonColor = not entry.locked
 		corner(b, 0.12)
-		stroke(b, 3)
+		stroke(b, 2)
 		b.Parent = list
 		local name = text(b, "Name", if entry.locked then "VIP" else "MAP " .. entry.slot, INK)
 		name.Size = UDim2.fromScale(0.9, 0.38)
@@ -783,7 +783,7 @@ function BuilderHud.showPublished(name: string, first: boolean, onInvite: (() ->
 	banner.Size = UDim2.fromScale(1.1, 0.22)
 	banner.ZIndex = 40
 	corner(banner, 0.15)
-	stroke(banner, 4)
+	stroke(banner, 2)
 	banner.Parent = gui
 	local headline = text(banner, "Headline", "PUBLISHED!", INK)
 	headline.Size = UDim2.fromScale(0.9, 0.36)

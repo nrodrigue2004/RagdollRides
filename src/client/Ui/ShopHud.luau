@@ -233,7 +233,7 @@ function ShopHud.open(
 	panel.Size = UDim2.fromScale(0.96, 0.92)
 	panel.BackgroundColor3 = PANEL
 	corner(panel, 0.04)
-	stroke(panel, 4)
+	stroke(panel, 2)
 	panel.Parent = s
 	local aspect = Instance.new("UIAspectRatioConstraint")
 	aspect.AspectRatio = 1.7
@@ -636,7 +636,7 @@ function ShopHud.crateReveal(parent: Instance, view: CrateView, onDone: () -> ()
 	box.BackgroundColor3 = Color3.fromRGB(200, 140, 70)
 	box.ZIndex = 51
 	corner(box, 0.12)
-	stroke(box, 4)
+	stroke(box, 2)
 	box.Parent = cover
 	local lid = text(box, "Lid", "?", WHITE)
 	lid.Size = UDim2.fromScale(1, 1)
@@ -722,7 +722,7 @@ function ShopHud.offer(parent: Instance, view: OfferView)
 	card.BackgroundColor3 = PANEL
 	card.ZIndex = 41
 	corner(card, 0.08)
-	stroke(card, 4)
+	stroke(card, 2)
 	card.Parent = cover
 	local title = text(card, "Title", view.title, INK)
 	title.Position = UDim2.fromScale(0.05, 0.05)

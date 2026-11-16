@@ -1,6 +1,6 @@
 -- JuiceFx: the juice table's visual replies that had no home yet (spec: Audio, VFX and juice > Juice
 -- table), driven by JuiceService:
--- * Speed lines: white streaks at the screen edges above 80 studs/s, stronger with speed (none with
+-- * Speed lines: faint white streaks at the screen edges above 100 studs/s, stronger with speed (none with
 --   Reduced motion).
 -- * Coin pickup: a coin flies from where it was grabbed to the coin counter, which bounces.
 -- * Ragdoll eject: a star puff where the rider leaves the seat.
@@ -15,8 +15,8 @@ local Workspace = game:GetService("Workspace")
 local JuiceFx = {}
 
 local LocalPlayer = Players.LocalPlayer
-local SPEED_LINES_FROM = 80
-local SPEED_LINES_FULL = 130
+local SPEED_LINES_FROM = 100 -- calm pass: later and fainter
+local SPEED_LINES_FULL = 160
 local LINE_COUNT = 10
 
 local gui: ScreenGui? = nil
@@ -83,7 +83,7 @@ function JuiceFx.speedLines(speed: number, reducedMotion: boolean, t: number)
 		f.Position = UDim2.fromScale(x, y)
 		f.Size = UDim2.new(0.05 + strength * 0.07, 0, 0, 2)
 		f.Rotation = if left then (y - 0.5) * 30 else -(y - 0.5) * 30
-		f.BackgroundTransparency = 1 - strength * 0.45 * (1 - phase)
+		f.BackgroundTransparency = 1 - strength * 0.25 * (1 - phase)
 		f.Visible = strength > 0
 	end
 end

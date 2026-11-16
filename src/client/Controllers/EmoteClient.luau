@@ -1,5 +1,5 @@
 -- EmoteClient: the emote wheel while driving (spec: Rider > emote wheel slots; Rider Pass: slots 5 and 6).
--- * An EMOTE button under RESET (B on a keyboard, d-pad up on a gamepad) opens a ring of your 4 slots
+-- * EMOTE in the MENU (B on a keyboard, d-pad up on a gamepad) opens a ring of your 4 slots
 --   (6 with the Rider Pass). Tap one to play it, tap the middle to close. On a keyboard, 1 to 6 pick a
 --   slot while the ring is open. An empty slot opens the garage's RIDER tab to fill it.
 -- * Your rider plays it at once on this device; the server checks it is on your wheel and passes it to
@@ -16,6 +16,7 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Catalog = require(Shared.Catalog)
 local Config = require(Shared.Config)
 local Emotes = require(Shared.Emotes)
+local TracksHud = require(script.Parent.Parent.Ui.TracksHud)
 local Net = require(Shared.Net)
 
 local LocalPlayer = Players.LocalPlayer
@@ -218,7 +219,7 @@ function EmoteClient.start()
 			end
 		end
 	end)
-	-- The button lives on the driving HUD, under RESET; it shows only while you could emote
+	-- The item lives in the HUD's MENU (calm pass); it shows only while you could emote
 	local clock = 0
 	RunService.Heartbeat:Connect(function(dt)
 		clock += dt
@@ -226,32 +227,8 @@ function EmoteClient.start()
 			return
 		end
 		clock = 0
-		local gui = controllers.Hud.getGui()
-		if button == nil and gui then
-			local b = Instance.new("TextButton")
-			b.Name = "Emote"
-			b.AnchorPoint = Vector2.new(1, 0)
-			b.Position = UDim2.new(1, -16, 0.2, 24)
-			b.SizeConstraint = Enum.SizeConstraint.RelativeYY
-			b.Size = UDim2.fromScale(0.09, 0.09)
-			b.BackgroundColor3 = Color3.fromRGB(255, 205, 40)
-			b.Font = FONT
-			b.TextScaled = true
-			b.TextColor3 = INK
-			b.Text = "EMOTE"
-			local pad = Instance.new("UIPadding")
-			pad.PaddingTop = UDim.new(0.3, 0)
-			pad.PaddingBottom = UDim.new(0.3, 0)
-			pad.PaddingLeft = UDim.new(0.1, 0)
-			pad.PaddingRight = UDim.new(0.1, 0)
-			pad.Parent = b
-			local size = Instance.new("UISizeConstraint")
-			size.MinSize = Vector2.new(Config.UI.minTapTarget, Config.UI.minTapTarget)
-			size.Parent = b
-			corner(b)
-			b.Parent = gui
-			b.Activated:Connect(EmoteClient.toggle)
-			button = b
+		if button == nil and TracksHud.hasMenu() then
+			button = TracksHud.addMenuItem("Emote", "EMOTE", 8, EmoteClient.toggle)
 		end
 		local can = canEmote()
 		if button then

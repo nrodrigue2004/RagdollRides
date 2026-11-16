@@ -1,5 +1,7 @@
 -- TracksHud: the Tracks screens on top of the driving HUD (spec: Screens and UI > Tracks screens).
---   Top bar: coins, stars and the next goal at the top left; MAPS, BUILD and the cog beside RESET.
+--   Top bar (calm pass, nate 2026-11-15: "way too much going on"): only coins and stars at the top left
+--   and one MENU button beside RESET. The menu holds HUB, MAPS, BUILD, TOP, SHOP, GARAGE, QUESTS, any
+--   extra items (EMOTE) and the cog, with the next goal bar on top; a red dot on an item shows on MENU.
 --   Run: the timer (top centre), checkpoints passed, and the split against your best at each checkpoint
 --   (green ahead, red behind).
 --   Cues: one big centre word that pulses (DRIVE, JUMP!, LEAN BACK!), and short toasts.
@@ -40,6 +42,9 @@ local splitLabel: TextLabel
 local cueLabel: TextLabel
 local toastLabel: TextLabel
 local buttonsFrame: Frame
+local menuButton: TextButton
+local menuPanel: Frame
+local menuCatcher: TextButton
 local resultsFrame: Frame? = nil
 local holdCurrent: (() -> ())? = nil
 
@@ -58,7 +63,7 @@ end
 
 local function stroke(parent: Instance, thickness: number?, mode: Enum.ApplyStrokeMode?)
 	local s = Instance.new("UIStroke")
-	s.Thickness = thickness or 3
+	s.Thickness = thickness or 2
 	s.Color = INK
 	s.ApplyStrokeMode = mode or Enum.ApplyStrokeMode.Border
 	s.Parent = parent
@@ -77,8 +82,10 @@ local function text(parent: Instance, name: string, value: string, color: Color3
 	return label
 end
 
+-- Text outlines stay thin (calm pass): at most 2 px, a little see-through
 local function outlined(label: TextLabel, thickness: number?)
-	stroke(label, thickness or 3, Enum.ApplyStrokeMode.Contextual)
+	local s = stroke(label, math.min(thickness or 2, 2), Enum.ApplyStrokeMode.Contextual)
+	s.Transparency = 0.25
 end
 
 local function pill(name: string, glyph: string, glyphColor: Color3, order: number): TextLabel
@@ -87,11 +94,11 @@ local function pill(name: string, glyph: string, glyphColor: Color3, order: numb
 	frame.BackgroundColor3 = INK
 	frame.BackgroundTransparency = 0.25
 	frame.SizeConstraint = Enum.SizeConstraint.RelativeYY
-	frame.Size = UDim2.fromScale(2.9, 1) -- the row is 7% of the screen tall
+	frame.Size = UDim2.fromScale(2.9, 1) -- the row is 5.5% of the screen tall
 	frame.LayoutOrder = order
 	corner(frame, 0.5)
 	local minimum = Instance.new("UISizeConstraint")
-	minimum.MinSize = Vector2.new(110, 40)
+	minimum.MinSize = Vector2.new(100, 34)
 	minimum.Parent = frame
 	frame.Parent = root:FindFirstChild("TopLeft")
 	local icon = text(frame, "Icon", glyph, glyphColor)
@@ -161,6 +168,20 @@ local function squareButton(parent: Instance, name: string, label: string, order
 	return button
 end
 
+local function addDot(button: GuiObject)
+	local dot = Instance.new("Frame")
+	dot.Name = "Dot"
+	dot.AnchorPoint = Vector2.new(0.5, 0.5)
+	dot.Position = UDim2.new(1, -6, 0, 6)
+	dot.Size = UDim2.fromOffset(14, 14)
+	dot.BackgroundColor3 = RED
+	dot.Visible = false
+	corner(dot, 0.5)
+	dot.Parent = button
+end
+
+local menuItems: Frame? = nil
+
 ---------------------------------------------------------------------------
 -- Build
 ---------------------------------------------------------------------------
@@ -189,117 +210,15 @@ function TracksHud.build(parentGui: ScreenGui, resetButton: GuiObject?, callback
 	topLeft.Name = "TopLeft"
 	topLeft.BackgroundTransparency = 1
 	topLeft.Position = UDim2.fromOffset(16, 16)
-	topLeft.Size = UDim2.fromScale(0.5, 0.07)
+	topLeft.Size = UDim2.fromScale(0.5, 0.055)
 	topLeft.Parent = root
 	local list = Instance.new("UIListLayout")
 	list.FillDirection = Enum.FillDirection.Horizontal
 	list.Padding = UDim.new(0, 8)
 	list.SortOrder = Enum.SortOrder.LayoutOrder
 	list.Parent = topLeft
-	-- HUB first (spec: top left, in every mode); hidden until Pip's Hill is done and while in the hub
-	local onHub = callbacks.onHub
-	if onHub then
-		local hub = Instance.new("TextButton")
-		hub.Name = "Hub"
-		hub.Text = "HUB"
-		hub.Font = FONT
-		hub.TextScaled = true
-		hub.TextColor3 = INK
-		hub.BackgroundColor3 = GOLD
-		hub.SizeConstraint = Enum.SizeConstraint.RelativeYY
-		hub.Size = UDim2.fromScale(1.6, 1)
-		hub.LayoutOrder = 0
-		hub.Visible = false
-		local hubMin = Instance.new("UISizeConstraint")
-		hubMin.MinSize = Vector2.new(Config.UI.minTapTarget, 40)
-		hubMin.Parent = hub
-		local hubPad = Instance.new("UIPadding")
-		hubPad.PaddingTop = UDim.new(0.2, 0)
-		hubPad.PaddingBottom = UDim.new(0.2, 0)
-		hubPad.Parent = hub
-		corner(hub, 0.5)
-		stroke(hub)
-		hub.Parent = topLeft
-		hub.Activated:Connect(onHub)
-	end
 	coinsLabel = pill("Coins", "●", GOLD, 1)
 	starsLabel = pill("Stars", "★", GOLD, 2)
-
-	goalFrame = Instance.new("Frame")
-	goalFrame.Name = "Goal"
-	goalFrame.BackgroundColor3 = INK
-	goalFrame.BackgroundTransparency = 0.25
-	goalFrame.SizeConstraint = Enum.SizeConstraint.RelativeYY
-	goalFrame.Size = UDim2.fromScale(0.42, 0.045)
-	goalFrame.Position = UDim2.new(0, 16, 0, 16)
-	goalFrame.AnchorPoint = Vector2.new(0, 0)
-	corner(goalFrame, 0.5)
-	local goalMin = Instance.new("UISizeConstraint")
-	goalMin.MinSize = Vector2.new(228, 28)
-	goalMin.Parent = goalFrame
-	goalFrame.Parent = root
-	goalFill = Instance.new("Frame")
-	goalFill.Name = "Fill"
-	goalFill.BackgroundColor3 = GOLD
-	goalFill.Size = UDim2.fromScale(0, 1)
-	corner(goalFill, 0.5)
-	goalFill.Parent = goalFrame
-	goalLabel = text(goalFrame, "Label", "", WHITE)
-	goalLabel.Size = UDim2.fromScale(0.92, 0.78)
-	goalLabel.Position = UDim2.fromScale(0.04, 0.11)
-	goalLabel.ZIndex = 2
-	outlined(goalLabel, 2)
-	-- Sit the goal bar just under the pills
-	local function placeGoal()
-		goalFrame.Position = UDim2.fromOffset(16, 16 + topLeft.AbsoluteSize.Y + 8)
-	end
-	topLeft:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeGoal)
-	placeGoal()
-
-	-- Left column under the goal bar: SHOP, GARAGE, QUESTS (the hub's stalls open the same screens)
-	local column = Instance.new("Frame")
-	column.Name = "LeftColumn"
-	column.BackgroundTransparency = 1
-	column.Size = UDim2.fromScale(0.1, 0.36)
-	column.Parent = root
-	local columnList = Instance.new("UIListLayout")
-	columnList.FillDirection = Enum.FillDirection.Vertical
-	columnList.Padding = UDim.new(0, 10)
-	columnList.SortOrder = Enum.SortOrder.LayoutOrder
-	columnList.Parent = column
-	for index, entry in
-		{
-			{ "Shop", "SHOP", callbacks.onShop },
-			{ "Garage", "GARAGE", callbacks.onGarage },
-			{ "Quests", "QUESTS", callbacks.onQuests },
-		}
-	do
-		local onPress = entry[3]
-		if onPress then
-			local b = squareButton(column, entry[1], entry[2], index)
-			b.Size = UDim2.fromScale(0.75, 0.75)
-			b.SizeConstraint = Enum.SizeConstraint.RelativeXX
-			b.Activated:Connect(onPress)
-			local dot = Instance.new("Frame")
-			dot.Name = "Dot"
-			dot.AnchorPoint = Vector2.new(0.5, 0.5)
-			dot.Position = UDim2.fromScale(0.92, 0.08)
-			dot.Size = UDim2.fromScale(0.28, 0.28)
-			dot.BackgroundColor3 = RED
-			dot.Visible = false
-			corner(dot, 0.5)
-			dot.Parent = b
-		end
-	end
-	local function placeColumn()
-		column.Position = UDim2.fromOffset(
-			16,
-			goalFrame.AbsolutePosition.Y - gui.AbsolutePosition.Y + goalFrame.AbsoluteSize.Y + 12
-		)
-	end
-	goalFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(placeColumn)
-	goalFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeColumn)
-	placeColumn()
 
 	-- Top centre: timer, checkpoints, split
 	timerLabel = text(root, "Timer", "0:00.00", WHITE)
@@ -327,7 +246,7 @@ function TracksHud.build(parentGui: ScreenGui, resetButton: GuiObject?, callback
 	cueLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 	cueLabel.Position = UDim2.fromScale(0.5, 0.3)
 	cueLabel.SizeConstraint = Enum.SizeConstraint.RelativeYY
-	cueLabel.Size = UDim2.fromScale(0.9, 0.12)
+	cueLabel.Size = UDim2.fromScale(0.9, 0.09)
 	cueLabel.Visible = false
 	outlined(cueLabel, 5)
 	toastLabel = text(root, "Toast", "", WHITE)
@@ -337,12 +256,12 @@ function TracksHud.build(parentGui: ScreenGui, resetButton: GuiObject?, callback
 	toastLabel.Visible = false
 	outlined(toastLabel, 3)
 
-	-- Top right: MAPS and the cog, left of RESET
+	-- Top right: one MENU button, left of RESET
 	buttonsFrame = Instance.new("Frame")
 	buttonsFrame.Name = "TopRight"
 	buttonsFrame.BackgroundTransparency = 1
 	buttonsFrame.AnchorPoint = Vector2.new(1, 0)
-	buttonsFrame.Size = UDim2.fromScale(0.4, 0.13)
+	buttonsFrame.Size = UDim2.fromScale(0.4, 0.09)
 	buttonsFrame.Parent = root
 	local row = Instance.new("UIListLayout")
 	row.FillDirection = Enum.FillDirection.Horizontal
@@ -350,18 +269,110 @@ function TracksHud.build(parentGui: ScreenGui, resetButton: GuiObject?, callback
 	row.Padding = UDim.new(0, 10)
 	row.SortOrder = Enum.SortOrder.LayoutOrder
 	row.Parent = buttonsFrame
-	local maps = squareButton(buttonsFrame, "Maps", "MAPS", 1)
-	maps.Activated:Connect(callbacks.onMaps)
-	local build = squareButton(buttonsFrame, "Build", "BUILD", 2)
-	build.Activated:Connect(callbacks.onBuild)
+	menuButton = squareButton(buttonsFrame, "Menu", "MENU", 1)
+	menuButton.Size = UDim2.fromScale(1.5, 0.85)
+	addDot(menuButton)
+	menuButton.Activated:Connect(function()
+		TracksHud.setMenuOpen(not menuPanel.Visible)
+	end)
+
+	-- The menu: a tap outside closes it
+	menuCatcher = Instance.new("TextButton")
+	menuCatcher.Name = "MenuCatcher"
+	menuCatcher.Text = ""
+	menuCatcher.BackgroundTransparency = 1
+	menuCatcher.Size = UDim2.fromScale(1, 1)
+	menuCatcher.Visible = false
+	menuCatcher.ZIndex = 5
+	menuCatcher.Parent = root
+	menuCatcher.Activated:Connect(function()
+		TracksHud.setMenuOpen(false)
+	end)
+	menuPanel = Instance.new("Frame")
+	menuPanel.Name = "MenuPanel"
+	menuPanel.AnchorPoint = Vector2.new(1, 0)
+	menuPanel.BackgroundColor3 = INK
+	menuPanel.BackgroundTransparency = 0.12
+	menuPanel.Size = UDim2.new(0, 420, 0, 0)
+	menuPanel.AutomaticSize = Enum.AutomaticSize.Y
+	menuPanel.Visible = false
+	menuPanel.ZIndex = 6
+	corner(menuPanel, 0.06)
+	local menuPad = Instance.new("UIPadding")
+	for _, side in { "PaddingTop", "PaddingBottom", "PaddingLeft", "PaddingRight" } do
+		(menuPad :: any)[side] = UDim.new(0, 12)
+	end
+	menuPad.Parent = menuPanel
+	local menuList = Instance.new("UIListLayout")
+	menuList.SortOrder = Enum.SortOrder.LayoutOrder
+	menuList.Padding = UDim.new(0, 10)
+	menuList.Parent = menuPanel
+	menuPanel.Parent = root
+	-- The next goal sits at the top of the menu, not over the road
+	goalFrame = Instance.new("Frame")
+	goalFrame.Name = "Goal"
+	goalFrame.BackgroundColor3 = Color3.fromRGB(70, 70, 84)
+	goalFrame.Size = UDim2.new(1, 0, 0, 30)
+	goalFrame.LayoutOrder = 0
+	goalFrame.Visible = false
+	corner(goalFrame, 0.5)
+	goalFrame.Parent = menuPanel
+	goalFill = Instance.new("Frame")
+	goalFill.Name = "Fill"
+	goalFill.BackgroundColor3 = GOLD
+	goalFill.Size = UDim2.fromScale(0, 1)
+	corner(goalFill, 0.5)
+	goalFill.Parent = goalFrame
+	goalLabel = text(goalFrame, "Label", "", WHITE)
+	goalLabel.Size = UDim2.fromScale(0.92, 0.7)
+	goalLabel.Position = UDim2.fromScale(0.04, 0.15)
+	goalLabel.ZIndex = 2
+	outlined(goalLabel, 1)
+	local grid = Instance.new("Frame")
+	grid.Name = "Items"
+	grid.BackgroundTransparency = 1
+	grid.Size = UDim2.fromScale(1, 0)
+	grid.AutomaticSize = Enum.AutomaticSize.Y
+	grid.LayoutOrder = 1
+	grid.Parent = menuPanel
+	local gridLayout = Instance.new("UIGridLayout")
+	gridLayout.CellSize = UDim2.new(1 / 3, -7, 0, Config.UI.minTapTarget)
+	gridLayout.CellPadding = UDim2.fromOffset(10, 10)
+	gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	gridLayout.Parent = grid
+	menuItems = grid
+	local onHub = callbacks.onHub
+	if onHub then
+		TracksHud.addMenuItem("Hub", "HUB", 1, onHub).Visible = false -- hidden until Pip's Hill is done
+	end
+	TracksHud.addMenuItem("Maps", "MAPS", 2, callbacks.onMaps)
+	TracksHud.addMenuItem("Build", "BUILD", 3, callbacks.onBuild)
 	local onTop = callbacks.onTop
 	if onTop then
-		local top = squareButton(buttonsFrame, "Top", "TOP", 3)
-		top.Activated:Connect(onTop)
-		top.Visible = false
+		TracksHud.addMenuItem("Top", "TOP", 4, onTop).Visible = false
 	end
-	local cog = squareButton(buttonsFrame, "Settings", "⚙", 4)
-	cog.Activated:Connect(callbacks.onSettings)
+	for index, entry in
+		{
+			{ "Shop", "SHOP", callbacks.onShop },
+			{ "Garage", "GARAGE", callbacks.onGarage },
+			{ "Quests", "QUESTS", callbacks.onQuests },
+		}
+	do
+		local onPress = entry[3]
+		if onPress then
+			TracksHud.addMenuItem(entry[1], entry[2], 4 + index, onPress)
+		end
+	end
+	TracksHud.addMenuItem("Settings", "SETTINGS", 99, callbacks.onSettings)
+	local function placeMenu()
+		menuPanel.Position = UDim2.fromOffset(
+			menuButton.AbsolutePosition.X - gui.AbsolutePosition.X + menuButton.AbsoluteSize.X,
+			menuButton.AbsolutePosition.Y - gui.AbsolutePosition.Y + menuButton.AbsoluteSize.Y + 8
+		)
+	end
+	menuButton:GetPropertyChangedSignal("AbsolutePosition"):Connect(placeMenu)
+	menuButton:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeMenu)
+	placeMenu()
 	local function placeButtons()
 		if resetButton then
 			local x = resetButton.AbsolutePosition.X - gui.AbsolutePosition.X
@@ -390,6 +401,46 @@ function TracksHud.setDot(name: string, visible: boolean)
 	if dot and dot:IsA("GuiObject") then
 		dot.Visible = visible
 	end
+	-- MENU shows a dot while any visible item in it has one
+	local any = false
+	if menuItems then
+		for _, item in menuItems:GetChildren() do
+			local d = item:FindFirstChild("Dot")
+			if item:IsA("GuiObject") and item.Visible and d and (d :: GuiObject).Visible then
+				any = true
+			end
+		end
+	end
+	local menuDot = menuButton and menuButton:FindFirstChild("Dot")
+	if menuDot then
+		(menuDot :: GuiObject).Visible = any
+	end
+end
+
+function TracksHud.hasMenu(): boolean
+	return menuItems ~= nil
+end
+
+-- Open or close the menu
+function TracksHud.setMenuOpen(open: boolean)
+	if menuPanel == nil then
+		return
+	end
+	menuPanel.Visible = open
+	menuCatcher.Visible = open
+	menuButton.Text = if open then "CLOSE" else "MENU"
+end
+
+-- Another screen's item in the menu (EMOTE): pressing it closes the menu, then calls onPress
+function TracksHud.addMenuItem(name: string, label: string, order: number, onPress: () -> ()): TextButton
+	local b = squareButton(menuItems :: Frame, name, label, order)
+	b.BackgroundTransparency = 0
+	addDot(b)
+	b.Activated:Connect(function()
+		TracksHud.setMenuOpen(false)
+		onPress()
+	end)
+	return b
 end
 
 function TracksHud.setButtonVisible(name: string, visible: boolean)
@@ -404,7 +455,7 @@ end
 -- The quest tracker (spec: top right, collapsible: 3 daily quests with live counts). Tap to fold it.
 export type TrackerRow = { text: string, progress: number, target: number, claimed: boolean }
 local tracker: Frame? = nil
-local trackerOpen = true
+local trackerOpen = false -- folded to one line until tapped (calm pass)
 local trackerRows: { TrackerRow } = {}
 
 local function drawTracker()
@@ -609,8 +660,8 @@ function TracksHud.update(dt: number)
 			cueLabel.Visible = false
 		else
 			cueClock += dt
-			local scale = 1 + 0.08 * math.sin(cueClock * 9)
-			cueLabel.Size = UDim2.fromScale(0.9 * scale, 0.12 * scale)
+			local scale = 1 + 0.03 * math.sin(cueClock * 6)
+			cueLabel.Size = UDim2.fromScale(0.9 * scale, 0.09 * scale)
 		end
 	end
 end
@@ -674,7 +725,7 @@ function TracksHud.showResults(view: ResultView, actions: ResultActions)
 	card.BackgroundColor3 = PANEL
 	card.ZIndex = 20
 	corner(card, 0.08)
-	stroke(card, 4)
+	stroke(card, 2)
 	card.Parent = root
 	resultsFrame = card
 
@@ -889,7 +940,7 @@ function TracksHud.ratePanel(card: Frame, rate: RateView, hold: () -> ())
 	panel.BackgroundColor3 = PANEL
 	panel.ZIndex = 20
 	corner(panel, 0.3)
-	stroke(panel, 3)
+	stroke(panel, 2)
 	panel.Parent = card
 
 	local stars: { TextButton } = {}

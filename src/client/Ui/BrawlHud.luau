@@ -350,7 +350,7 @@ function BrawlHud.eliminated(parent: Instance, view: OutView?)
 	f.Size = UDim2.fromScale(1.15, 0.2)
 	f.BackgroundColor3 = PANEL
 	corner(f, 0.15)
-	stroke(f, 3)
+	stroke(f, 2)
 	f.Parent = g
 	local line = text(f, "Line", view.line, INK)
 	line.Position = UDim2.fromScale(0.04, 0.06)
@@ -422,7 +422,7 @@ function BrawlHud.showResults(parent: Instance, view: ResultView)
 	card.Size = UDim2.fromScale(1.15, 0.9)
 	card.BackgroundColor3 = PANEL
 	corner(card, 0.05)
-	stroke(card, 4)
+	stroke(card, 2)
 	card.Parent = g
 	resultsFrame = card
 	local title = text(card, "Title", view.title, INK)

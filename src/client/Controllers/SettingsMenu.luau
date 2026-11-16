@@ -101,7 +101,7 @@ local function applyEffects(level: string)
 	local camera = workspace.CurrentCamera
 	local small = camera ~= nil and math.min(camera.ViewportSize.X, camera.ViewportSize.Y) < 500
 	local on = level == "high" or level == "medium" or (level == "auto" and not small)
-	for _, name in { "Bloom", "SunRays" } do
+	for _, name in { "Bloom" } do
 		local effect = Lighting:FindFirstChild(name)
 		if effect and effect:IsA("PostEffect") then
 			effect.Enabled = on
@@ -295,7 +295,7 @@ local function build()
 	card.BackgroundColor3 = PANEL
 	card.Visible = false
 	corner(card, 0.05)
-	stroke(card, 4)
+	stroke(card, 2)
 	local maxWidth = Instance.new("UISizeConstraint")
 	maxWidth.MaxSize = Vector2.new(560, 720)
 	maxWidth.Parent = card

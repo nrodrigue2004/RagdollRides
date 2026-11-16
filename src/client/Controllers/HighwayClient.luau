@@ -438,7 +438,6 @@ local function onImpact(info: { [string]: any })
 		if rig and rig.id and riding and info.impact < cfg.ride.crashImpact then
 			-- A scrape: the car gets a nudge, the ride goes on
 			Traffic.hit(r.traffic :: Traffic.Pool, rig, info.impact, 0, false)
-			HighwayHud.pop(playerGui(), "SCRAPE!", Color3.fromRGB(255, 240, 200), info.point, 0.04)
 			controllers.Camera.shake(0.3, 0.2)
 			return
 		end
@@ -814,13 +813,6 @@ local function onEvent(e: { [string]: any })
 			end
 			r.wreckEndsAt = e.endsAt or r.wreckEndsAt
 			r.meters = e.meters or r.meters
-			HighwayHud.pop(
-				playerGui(),
-				string.format("%s m ridden!", HighwayHud.commas(r.meters)),
-				Color3.fromRGB(110, 200, 255),
-				nil,
-				0.05
-			)
 		end
 	elseif kind == "bone" then
 		onBone(e)
@@ -1121,10 +1113,7 @@ local function step(dt: number)
 		local speedX = if r.phase == "ride"
 			then Score.speedTier(math.max(0, state and state.forwardSpeed or 0) / top, cfg.ride)
 			else 1
-		if speedX > r.lastSpeedX and r.phase == "ride" then
-			HighwayHud.pop(playerGui(), "SPEED x" .. speedX, Color3.fromRGB(255, 205, 40), nil, 0.04)
-		end
-		r.lastSpeedX = speedX
+		r.lastSpeedX = speedX -- the run bar shows it; no pop (calm pass)
 		local mirror = r.mirror
 		local left = math.max(0, mirror.comboUntil - t)
 		local meterGoal = Workspace:GetAttribute("HavocGoal") or cfg.meter.goal

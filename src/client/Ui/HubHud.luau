@@ -136,7 +136,7 @@ local function panel(
 	p.Size = UDim2.fromScale(0.94, 0.9)
 	p.BackgroundColor3 = PANEL
 	corner(p, 0.04)
-	stroke(p, 4)
+	stroke(p, 2)
 	p.Parent = shade
 	local aspect = Instance.new("UIAspectRatioConstraint")
 	aspect.AspectRatio = 1.75
@@ -200,13 +200,13 @@ function HubHud.openModes(parent: Instance, cards: { ModeCard }, party: PartyStr
 		f.Size = UDim2.fromScale(0.32, 1)
 		f.BackgroundColor3 = if card.locked then SILHOUETTE else card.color
 		corner(f, 0.06)
-		local outline = stroke(f, if card.glow then 5 else 3, if card.glow then GOLD else INK)
+		local outline = stroke(f, if card.glow then 3 else 2, if card.glow then GOLD else INK)
 		f.Parent = row
 		if card.glow then
 			glowTween = TweenService:Create(
 				outline,
 				TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-				{ Thickness = 9 }
+				{ Thickness = 4 }
 			)
 			glowTween:Play()
 		end
@@ -387,7 +387,7 @@ function HubHud.invite(parent: Instance, name: string, seconds: number, onJoin: 
 	card.Size = UDim2.fromScale(0.42, 0.18)
 	card.BackgroundColor3 = PANEL
 	corner(card, 0.12)
-	stroke(card, 3)
+	stroke(card, 2)
 	card.Parent = g
 	overlays.invite = card
 	local label = text(card, "Text", name .. " invites you to their party!", INK)

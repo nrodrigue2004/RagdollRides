@@ -61,7 +61,7 @@ end
 
 local function stroke(parent: Instance)
 	local s = Instance.new("UIStroke")
-	s.Thickness = 3
+	s.Thickness = 2
 	s.Color = Color3.fromRGB(35, 35, 45)
 	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	s.Parent = parent
@@ -197,7 +197,7 @@ local function buildTouchControls()
 end
 
 local function buildPrompts()
-	resetButton = makeButton("Reset", "RESET", 0.11, COLORS.utility, gui)
+	resetButton = makeButton("Reset", "RESET", 0.09, COLORS.utility, gui)
 	resetButton.AnchorPoint = Vector2.new(1, 0)
 	resetButton.Position = UDim2.new(1, -16, 0, 16)
 	resetButton.Activated:Connect(function()
@@ -242,13 +242,14 @@ local function buildSpeedometer()
 	speedLabel.AnchorPoint = Vector2.new(0.5, 1)
 	speedLabel.Position = UDim2.new(0.5, 0, 1, -12)
 	speedLabel.SizeConstraint = Enum.SizeConstraint.RelativeYY
-	speedLabel.Size = UDim2.fromScale(0.3, 0.09)
+	speedLabel.Size = UDim2.fromScale(0.22, 0.055)
 	speedLabel.Font = FONT
 	speedLabel.TextScaled = true
 	speedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	speedLabel.Text = "0 mph"
 	local s = Instance.new("UIStroke")
-	s.Thickness = 3
+	s.Thickness = 1.5
+	s.Transparency = 0.25
 	s.Color = Color3.fromRGB(35, 35, 45)
 	s.Parent = speedLabel
 	speedLabel.Parent = gui
@@ -261,9 +262,9 @@ local function buildHints()
 	hintLabel.BackgroundTransparency = 0.35
 	hintLabel.AnchorPoint = Vector2.new(0, 1)
 	hintLabel.Position = UDim2.new(0, 16, 1, -16)
-	hintLabel.Size = UDim2.fromOffset(440, 110)
+	hintLabel.Size = UDim2.fromOffset(380, 84)
 	hintLabel.Font = Enum.Font.GothamMedium
-	hintLabel.TextSize = 18
+	hintLabel.TextSize = 15
 	hintLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	hintLabel.TextXAlignment = Enum.TextXAlignment.Left
 	hintLabel.TextWrapped = true
@@ -357,7 +358,7 @@ local function buildDamage()
 	wreckedLabel.Position = UDim2.new(0.5, 0, 0, 24)
 	wreckedLabel.Visible = false
 	local ws = Instance.new("UIStroke")
-	ws.Thickness = 4
+	ws.Thickness = 2
 	ws.Color = Color3.fromRGB(35, 35, 45)
 	ws.Parent = wreckedLabel
 	wreckedLabel.Parent = gui
@@ -527,15 +528,15 @@ local function update(dt: number)
 		fireIcon.Size = UDim2.fromScale(pulse, pulse)
 	end
 	updatePulses(t)
-	-- Tracks free runs show the damage silhouette only once the car is damaged (less clutter)
-	silhouette.Visible = workspace:GetAttribute("Mode") ~= "Tracks" or damaged
+	-- Tracks crashes never change handling, so Tracks shows no damage silhouette (calm pass)
+	silhouette.Visible = workspace:GetAttribute("Mode") ~= "Tracks"
 	local showWrecked = wrecked and not ragdolled
 	wreckedLabel.Visible = showWrecked
 	if showWrecked then
-		local pulse = 0.11 * (1 + 0.1 * math.sin(t * 8)) * layout.controlSize
+		local pulse = 0.09 * (1 + 0.1 * math.sin(t * 8)) * layout.controlSize
 		resetButton.Size = UDim2.fromScale(pulse, pulse)
 	else
-		resetButton.Size = UDim2.fromScale(0.11 * layout.controlSize, 0.11 * layout.controlSize)
+		resetButton.Size = UDim2.fromScale(0.09 * layout.controlSize, 0.09 * layout.controlSize)
 	end
 end
 

@@ -1078,6 +1078,9 @@ Config.Highway = {
 		crashImpact = 22, -- a traffic hit this hard ends the ride (lighter is a scrape); so do a Huge crash,
 		-- being thrown, a hard bump from a versus player and blowing up
 		startGap = 30, -- studs of clear lane ahead and behind where a ride begins (never inside a car)
+		-- Hands-off steering help during the ride (only while you are not steering): turn toward the road's
+		-- heading, plus a little toward the nearest lane centre
+		assist = { headingGain = 2.5, laneGain = 0.015, laneMaxHeading = 0.08, max = 0.3 },
 		wreckLength = 10, -- seconds of Wreck Mode after the crash: smash everything for points
 		boomRadius = 30, -- BOOM (once per wreck): blow your car up and send everything near it flying
 		idleLimit = 25, -- seconds without moving forward ends the ride

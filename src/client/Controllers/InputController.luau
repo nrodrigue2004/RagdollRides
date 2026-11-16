@@ -38,6 +38,9 @@ local override: Snapshot? = nil
 -- Studio only: Workspace attributes TestThrottle and TestSteer (-1 to 1) drive the car, so an automated
 -- Studio test can drive without a keyboard. Ignored in live servers.
 local STUDIO = game:GetService("RunService"):IsStudio()
+-- A mode's hands-off steering help (Highway: follow the road and settle into a lane), used only while the
+-- player is not steering. -1 to 1.
+local assistSteer = 0
 local rampedSteer = 0
 local lastDevice = "keyboard"
 
@@ -82,6 +85,10 @@ end
 
 function InputController.tap(action: string)
 	press(action)
+end
+
+function InputController.setAssistSteer(value: number)
+	assistSteer = math.clamp(value, -1, 1)
 end
 
 function InputController.setOverride(snapshot: Snapshot?)
@@ -145,6 +152,9 @@ function InputController.read(dt: number): Snapshot
 	else
 		rampedSteer = VehicleMath.rampInput(rampedSteer, digitalSteer, Config.Driving.steerRampTime, dt)
 		steer = rampedSteer
+		if digitalSteer == 0 and assistSteer ~= 0 then
+			steer = math.clamp(steer + assistSteer, -1, 1)
+		end
 	end
 
 	local lean = 0

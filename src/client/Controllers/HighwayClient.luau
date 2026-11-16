@@ -818,7 +818,7 @@ local function onStart(msg: { [string]: any })
 		TracksHud.showCue("GO AS FAR AS YOU CAN!", 1.6)
 	end
 	controllers.Juice.fire("Finish", { volume = 0.4 })
-	-- The car may be there already (Ride again keeps it)
+	-- The car may be there already (the server spawns a new one for each ride too; placing both is harmless)
 	local chassis = myChassis()
 	if chassis and chassis.Parent then
 		local model = chassis.Parent :: Model
@@ -1090,6 +1090,7 @@ local function showResults(msg: { [string]: any })
 end
 
 local function onEnd(msg: { [string]: any })
+	controllers.Input.setAssistSteer(0)
 	local r = run
 	if r == nil or msg.run ~= r.id then
 		return
@@ -1125,6 +1126,20 @@ local function step(dt: number)
 	end
 	if r.traffic then
 		Traffic.update(r.traffic, dt, s, pos)
+	end
+	-- Hands-off help during the ride: with no steering the car follows the road's curve and settles into
+	-- the nearest lane, so steering is only for changing lanes (and phones need fewer taps)
+	if r.phase == "ride" and not r.over then
+		local a = cfg.ride.assist
+		local look = chassis.CFrame.LookVector
+		local carHeading = math.atan2(look.X, -look.Z)
+		local centre = HighwayMath.laneOffset(r.def, HighwayMath.laneAt(r.def, lateral))
+		local target = HighwayMath.heading(r.def, s)
+			- math.clamp((lateral - centre) * a.laneGain, -a.laneMaxHeading, a.laneMaxHeading)
+		local err = (target - carHeading + math.pi) % (2 * math.pi) - math.pi
+		controllers.Input.setAssistSteer(math.clamp(err * a.headingGain, -a.max, a.max))
+	else
+		controllers.Input.setAssistSteer(0)
 	end
 	-- Pit Wrenches
 	local wrench = Road.stepWrenches(r.road, os.clock(), pos)

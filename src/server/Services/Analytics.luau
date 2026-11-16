@@ -46,6 +46,11 @@ local function field(key: Enum.AnalyticsCustomFieldKeys): string
 	return key.Name
 end
 
+-- AnalyticsService refuses values with a comma or quotes ("Pip's Hill"): drop them, keep 50 chars
+local function clean(value: string): string
+	return string.sub((string.gsub(value, "[,\"']", "")), 1, 50)
+end
+
 function Analytics.event(player: Player, name: string, value: number?, a: string?, b: string?, c: string?)
 	local s = analytics()
 	if s == nil or player.Parent ~= Players then
@@ -53,16 +58,16 @@ function Analytics.event(player: Player, name: string, value: number?, a: string
 	end
 	local fields: { [string]: string } = {}
 	if a then
-		fields[field(Enum.AnalyticsCustomFieldKeys.CustomField01)] = string.sub(a, 1, 50)
+		fields[field(Enum.AnalyticsCustomFieldKeys.CustomField01)] = clean(a)
 	end
 	if b then
-		fields[field(Enum.AnalyticsCustomFieldKeys.CustomField02)] = string.sub(b, 1, 50)
+		fields[field(Enum.AnalyticsCustomFieldKeys.CustomField02)] = clean(b)
 	end
 	if c then
-		fields[field(Enum.AnalyticsCustomFieldKeys.CustomField03)] = string.sub(c, 1, 50)
+		fields[field(Enum.AnalyticsCustomFieldKeys.CustomField03)] = clean(c)
 	end
 	pcall(function()
-		(s :: AnalyticsService):LogCustomEvent(player, name, value or 1, fields)
+		(s :: AnalyticsService):LogCustomEvent(player, clean(name), value or 1, fields)
 	end)
 end
 
@@ -72,7 +77,7 @@ local function funnelStep(player: Player, funnel: string, session: string, step:
 		return
 	end
 	pcall(function()
-		(s :: AnalyticsService):LogFunnelStepEvent(player, funnel, session, step, name)
+		(s :: AnalyticsService):LogFunnelStepEvent(player, clean(funnel), session, step, clean(name))
 	end)
 end
 

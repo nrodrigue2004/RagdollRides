@@ -34,6 +34,11 @@ function EconomyService.boostFor(player: Player): number
 	return TracksMath.boost(EconomyService.friendsInServer(player), rebirths, Config.Economy)
 end
 
+-- AnalyticsService refuses values with a comma or quotes: drop them, keep 50 chars
+local function clean(value: string): string
+	return string.sub((string.gsub(value, "[,\"']", "")), 1, 50)
+end
+
 local function logEconomy(player: Player, currency: string, amount: number, balance: number, sku: string)
 	pcall(function()
 		AnalyticsService:LogEconomyEvent(
@@ -43,7 +48,7 @@ local function logEconomy(player: Player, currency: string, amount: number, bala
 			amount,
 			balance,
 			Enum.AnalyticsEconomyTransactionType.Gameplay.Name,
-			sku
+			clean(sku)
 		)
 	end)
 end
@@ -83,7 +88,7 @@ function EconomyService.spend(player: Player, coins: number, stars: number, sku:
 					row[2],
 					row[3],
 					Enum.AnalyticsEconomyTransactionType.Shop.Name,
-					sku
+					clean(sku)
 				)
 			end)
 		end
@@ -119,7 +124,7 @@ function EconomyService.funnel(player: Player, step: number, name: string)
 	end
 	logged[step] = true
 	pcall(function()
-		AnalyticsService:LogOnboardingFunnelStepEvent(player, step, name)
+		AnalyticsService:LogOnboardingFunnelStepEvent(player, step, clean(name))
 	end)
 end
 

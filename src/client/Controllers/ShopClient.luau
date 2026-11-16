@@ -9,7 +9,7 @@
 --   item is always on sale here; the rotation only puts some in the spotlight (no scarcity).
 -- * QUESTS: daily and weekly quests, the daily chest, the 7-day login streak and gifts. The QUESTS
 --   button shows a red dot when something is ready to claim.
--- * The Starter Pack offer shows once, over the results card of the first finish (no timer; NO THANKS
+-- * The Starter Pack offer shows once, in place of the results card of the first finish (no timer; NO THANKS
 --   is as big as BUY).
 -- Also starts LookFx (trails on every car). Text is ours only.
 
@@ -929,6 +929,7 @@ local function maybeOffer(result: any)
 			return
 		end
 		TracksHud.holdResults()
+		TracksHud.setResultsVisible(false) -- one card at a time; it comes back when the offer closes
 		Net.send("Shop.Seen", "starter")
 		local starter = M.products.starter
 		ShopHud.offer(LocalPlayer:WaitForChild("PlayerGui"), {
@@ -941,9 +942,12 @@ local function maybeOffer(result: any)
 			},
 			price = robux(starter.robux),
 			onBuy = function()
+				TracksHud.setResultsVisible(true)
 				buy("starter", "robux")
 			end,
-			onClose = function() end,
+			onClose = function()
+				TracksHud.setResultsVisible(true)
+			end,
 		})
 	end)
 end

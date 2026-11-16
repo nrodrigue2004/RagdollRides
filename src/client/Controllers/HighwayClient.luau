@@ -376,12 +376,26 @@ end
 ---------------------------------------------------------------------------
 
 local boom: () -> ()
+local lastImpact: { [string]: any }? = nil -- for the Studio log of why a ride ended
 
 -- The ride is over: Wreck Mode starts here at once (the server confirms with "wreckStart")
 local function crash(why: string)
 	local r = run
 	if r == nil or r.over or r.phase ~= "ride" then
 		return
+	end
+	if RunService:IsStudio() then
+		local i = lastImpact
+		print(
+			string.format(
+				"[Highway] ride over (%s) at %d m; last impact %s",
+				why,
+				math.floor(r.meters),
+				if i
+					then string.format("I %.0f %s %s", i.impact, tostring(i.tier), tostring(i.side))
+					else "none"
+			)
+		)
 	end
 	r.phase = "wreck"
 	r.wreckEndsAt = now() + cfg.ride.wreckLength
@@ -430,6 +444,7 @@ local function onImpact(info: { [string]: any })
 	if r == nil or r.over then
 		return
 	end
+	lastImpact = info
 	local other = info.other :: BasePart?
 	local versus = seed ~= nil and seed.versus
 	local riding = r.phase == "ride"
@@ -471,9 +486,10 @@ local function onImpact(info: { [string]: any })
 	if riding and info.tier == "HugeCrash" and info.side ~= "Bottom" then
 		crash("crash")
 	end
-	-- Bones in the seat
+	-- Bones in the seat (a landing never ends the ride: ramps are part of it)
 	if
 		controllers.Vehicle.isDriverPresent()
+		and not (riding and info.side == "Bottom")
 		and info.impact >= cfg.bones.seatImpact
 		and (info.tier == "HardHit" or info.tier == "HugeCrash")
 	then

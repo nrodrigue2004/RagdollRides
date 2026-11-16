@@ -713,6 +713,13 @@ function TracksHud.resultsOpen(): boolean
 	return resultsFrame ~= nil
 end
 
+-- Hide the results card while a one-time offer sits on top, so only one card shows (calm pass)
+function TracksHud.setResultsVisible(visible: boolean)
+	if resultsFrame then
+		resultsFrame.Visible = visible
+	end
+end
+
 function TracksHud.showResults(view: ResultView, actions: ResultActions)
 	TracksHud.hideResults()
 	local cfg = Config.Tracks

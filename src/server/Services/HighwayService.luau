@@ -376,6 +376,16 @@ local function startWreck(player: Player, run: Run, why: string)
 	local t = now()
 	run.phase = "wreck"
 	run.why = why
+	if RunService:IsStudio() then
+		print(
+			string.format(
+				"[Highway] %s: wreck mode (%s) after %d studs",
+				player.Name,
+				why,
+				math.floor(run.distance)
+			)
+		)
+	end
 	run.wreckEndsAt = t + cfg.ride.wreckLength
 	Net.fire("Highway.Event", player, {
 		kind = "wreckStart",

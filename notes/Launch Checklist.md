@@ -37,3 +37,12 @@ Everything the code can do is done. These steps need nate (Studio, the Creator D
 - [ ] Creator Dashboard → Analytics: custom events (perf_sample, crash_huge, clip_share, run_finish, setting_change and the rest) and the 4 funnels (Onboarding, Builder, Mode entry, Purchase) show data after a test session.
 - [ ] 8-player server for 15 minutes in each mode: no server frame spike over 20 ms, no errors in the live console.
 - [ ] Soft launch to friends first (private, then public). Watch day-1 retention, the Onboarding funnel and perf samples before spending on ads.
+
+## Marketing: paid ads (nate's rule, 2026-11-17)
+Every paid push follows the shared playbook in project files `marketing/Paid Ads Playbook.md`. No Robux spent without nate's OK on that campaign.
+- [ ] Only after the quiet launch: organic Day-1 return at least 15% and no known crash in the opening.
+- [ ] Make 2 to 3 ad thumbnails (16:9) as well as the icon; submit them 3 days before the start (moderation takes up to 48 hours).
+- [ ] Split the budget over 5 to 7 days as a daily budget (example: 10,000 Robux = about 1,400 to 2,000 a day). Objective Plays, audience All Players, no extra targeting at first.
+- [ ] Day 1: CTR per thumbnail in Ads Manager (aim for 2.5% or more). Day 2: turn off the weakest thumbnail, and read day 1's FunnelKit data.
+- [ ] Pause the campaign if more than 35% of first sessions end in under 1 minute (`first_session_end`, length "under 1m"), or under half of new players reach First round (Progress funnel; also the Onboarding funnel). Fix that step, then run ads again.
+- [ ] Log each campaign in the playbook's campaign log.
